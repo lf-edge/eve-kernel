@@ -1466,7 +1466,7 @@ static void rsi_shutdown(struct device *dev)
 	if (hw) {
 		struct cfg80211_wowlan *wowlan = hw->wiphy->wowlan_config;
 
-		if (rsi_config_wowlan(adapter, wowlan))
+		if (wowlan && rsi_config_wowlan(adapter, wowlan))
 			rsi_dbg(ERR_ZONE, "Failed to configure WoWLAN\n");
 	}
 
