@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Copyright (c) 2021 ZEDEDA Inc.
+ */
+#include "rk3399-q116.dts"
+#include <dt-bindings/leds/common.h>
+
+/ {
+	leds {
+                compatible = "gpio-leds"; 
+
+                power {
+                        label = "power";
+                        gpios = <&gpio0 12 GPIO_ACTIVE_HIGH>;
+                        color = <LED_COLOR_ID_MULTI>; /* RED and BLUE */
+                        default-state = "keep";
+                        linux,default-trigger = "default-on";
+                };
+
+		eve {
+			label = "eve";
+			gpios = <&gpio4 3 GPIO_ACTIVE_LOW>;
+			color = <LED_COLOR_ID_YELLOW>;
+			default-state = "keep";
+			linux,default-trigger = "default-on";
+		};
+	};
+};
