@@ -155,6 +155,9 @@ obj-$(CONFIG_SILICOM_PLATFORM)		+= silicom-platform.o
 # TUXEDO
 obj-y					+= tuxedo/
 
+# Operational Services EM32x devices
+obj-$(CONFIG_OS_EM32X)	+= os-em32x.o
+
 # Winmate
 obj-$(CONFIG_WINMATE_FM07_KEYS)		+= winmate-fm07-keys.o
 

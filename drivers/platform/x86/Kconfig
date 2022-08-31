@@ -1037,6 +1037,16 @@ config OXP_EC
 
 source "drivers/platform/x86/tuxedo/Kconfig"
 
+config OS_EM32X
+	tristate "Operational Services  EM32x platform"
+	depends on X86_64
+	depends on I2C
+	depends on LEDS_CLASS
+	depends on LEDS_GPIO
+	depends on GPIO_PCA953X
+	help
+	  This driver add support for Operational Services EM32x platforms
+
 endif # X86_PLATFORM_DEVICES
 
 config P2SB
