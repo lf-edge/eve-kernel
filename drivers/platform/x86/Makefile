@@ -132,5 +132,8 @@ obj-$(CONFIG_X86_INTEL_LPSS)		+= pmc_atom.o
 # Siemens Simatic Industrial PCs
 obj-$(CONFIG_SIEMENS_SIMATIC_IPC)	+= simatic-ipc.o
 
+# Operational Services EM32x devices
+obj-$(CONFIG_OS_EM32X)	+= os-em32x.o
+
 # Winmate
 obj-$(CONFIG_WINMATE_FM07_KEYS)		+= winmate-fm07-keys.o
