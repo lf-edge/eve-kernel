@@ -367,4 +367,25 @@ config NVMEM_ZYNQMP
 
 	  If sure, say yes. If unsure, say no.
 
+config SPRD_EFUSE
+	tristate "Spreadtrum SoC eFuse Support"
+	depends on ARCH_SPRD || COMPILE_TEST
+	depends on HAS_IOMEM
+	help
+	  This is a simple driver to dump specified values of Spreadtrum
+	  SoCs from eFuse.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called nvmem-sprd-efuse.
+
+config NVMEM_IMX_OCOTP_FSB_S400
+	tristate "i.MX FSB/S400-API ocotp fuse box support"
+	depends on IMX_SENTNL_MU
+	default y
+	help
+	  This is a driver for the ocotp fuse box which can be accessed by
+	  FSB and S400-API.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called nvmem-imx-ocotp-fsb-s400.
 endif
