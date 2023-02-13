@@ -224,10 +224,9 @@
 	mdio {
 		#address-cells = <1>;
 		#size-cells = <0>;
-
-		ethphy1: ethernet-phy@4 {
+		ethphy1: ethernet-phy@1 {
 			compatible = "ethernet-phy-ieee802.3-c22";
-			reg = <4>;
+			reg = <1>;
 			at803x,eee-disabled;
 			at803x,vddio-1p8v;
 		};
