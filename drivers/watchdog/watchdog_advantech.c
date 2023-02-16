@@ -102,21 +102,23 @@ struct watchdog_info adv_wdt_info = {
 
 static int adv_wdt_i2c_write_reg(struct i2c_client *client, u8 reg, void *buf, size_t len)
 {
-	u8 val[1 + len];
+	u8 buffer[32];
 	u8 retry = 0;
 	int err;
+	struct i2c_msg msg[1];
 
-	struct i2c_msg msg[1] = {
-		{
-			.addr = client->addr,
-			.flags = 0,
-			.len = sizeof(val),
-			.buf = val,
-		}
-	};
+	if ((1 + len) > sizeof(buffer)) {
+		dev_crit(&client->dev, "i2c message too long: %lu bytes\n", len);
+		return -EIO;
+	}
 
-	val[0] = reg;
-	memcpy(&val[1], buf, len);
+	msg[0].addr  = client->addr;
+	msg[0].flags = 0;
+	msg[0].len   = 1 + len;
+	msg[0].buf   = buffer;
+
+	buffer[0] = reg;
+	memcpy(&buffer[1], buf, len);
 
 	do {
 		err = i2c_transfer(client->adapter, msg, 1);
@@ -315,8 +317,9 @@ static long adv_wdt_ioctl(struct file *file, unsigned int cmd,
 		adv_wdt.timeout = new_value;
 		adv_wdt_i2c_set_timeout(adv_client, adv_wdt.timeout);
 		adv_wdt_ping();
+		adv_wdt_i2c_read_timeout(adv_client, &adv_wdt.timeout);
+		return put_user((int)(adv_wdt.timeout & 0xFFFF)/10, p);
 
-		/* Fallthrough to return current value */
 	case WDIOC_GETTIMEOUT:
 		adv_wdt_i2c_read_timeout(adv_client, &adv_wdt.timeout);
 		//printk("WDIOC_GETTIMEOUT:%x\n", adv_wdt.timeout);
