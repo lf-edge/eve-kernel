@@ -89,7 +89,7 @@
 
 	lvds_backlight0: lvds_backlight@0 {
 		compatible = "pwm-backlight";
-		pwms = <&pwm2 0 5000000>;
+		pwms = <&pwm2 0 5000000 0>;
 		status = "disabled";
 
 		brightness-levels = < 0  1  2  3  4  5  6  7  8  9
@@ -108,7 +108,7 @@
 
 	lvds_backlight1: lvds_backlight@1 {
 		compatible = "pwm-backlight";
-		pwms = <&pwm3 0 5000000>;
+		pwms = <&pwm3 0 5000000 0>;
 		status = "disabled";
 
 		brightness-levels = < 0  1  2  3  4  5  6  7  8  9
