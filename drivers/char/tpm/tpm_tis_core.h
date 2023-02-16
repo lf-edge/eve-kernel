@@ -78,6 +78,12 @@ enum tis_defaults {
 #define	TPM_DID_VID(l)			(0x0F00 | ((l) << 12))
 #define	TPM_RID(l)			(0x0F04 | ((l) << 12))
 
+#ifdef CONFIG_ARCH_ADVANTECH
+/*+ fix BHO I2C implementation */
+#define TPM_INTF_CAPABILITY(l)	(0x0030 | ((l) << 12))
+/*- fix BHO I2C implementation */
+#endif
+
 #define LPC_CNTRL_OFFSET		0x84
 #define LPC_CLKRUN_EN			(1 << 2)
 #define INTEL_LEGACY_BLK_BASE_ADDR	0xFED08000
