@@ -1,5 +1,3 @@
-#ifdef CONFIG_ARCH_ADVANTECH
-
 #include <linux/of_platform.h>
 #include <linux/module.h>
 #include <linux/of_gpio.h>
@@ -185,5 +183,3 @@ MODULE_AUTHOR("Advantech");
 MODULE_DESCRIPTION("GIPO SET DIRECTION driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:gpio-set-direction");
-
-#endif
