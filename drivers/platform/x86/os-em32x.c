@@ -134,6 +134,15 @@ static const struct dmi_system_id os_dmi_table[] __initconst = {
 		.driver_data = &em320_config,
 		.callback = dmi_check_cb
 	},
+	{
+		.ident = "EM321",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Axiomtek Co., Ltd"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "EM321"),
+		},
+		.driver_data = &em320_config,
+		.callback = dmi_check_cb
+	},
 };
 
 static struct i2c_client *client;
