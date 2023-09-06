@@ -1,0 +1,133 @@
+#syntax=docker/dockerfile:1.6
+
+# Alpine still doesn't support riscv64 in a mainline, only on 'edge' branch
+# As soon as it will be available in mainline, we can use it for 0 price
+# for now one can just set ALPINE_VERSION to 'edge' for 
+# experements with riscv64. Clang is a cross compiler by default and no extra
+# steps are required to build for riscv64
+
+ARG ALPINE_VERSION=3.18
+FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-base
+RUN apk add --no-cache \
+    build-base \
+    clang \
+    git \
+    openssl-dev \
+    linux-headers \
+    musl-dev \
+    libgcc \
+    flex \
+    bison \
+    lld \
+    llvm \
+    elfutils-dev \
+    bash \
+    findutils \
+    diffutils \
+    perl \
+    ccache \
+    # for ZFS
+    automake \ 
+    autoconf \
+    libtool \
+    util-linux-dev \
+    libtirpc-dev \
+    libaio-dev \
+    python3 \
+    # for module signing
+    openssl
+
+
+ARG TARGETARCH
+ARG BUILDARCH
+ARG BUILDOS
+
+FROM builder-base as builder-amd64
+ARG KERNEL_DEFCONFIG=eve_defconfig
+ARG ARCH=x86_64
+ARG ZFS_CROSS_HOST=x86_64-linux-musl
+
+FROM builder-base as builder-arm64
+ARG KERNEL_DEFCONFIG=defconfig
+ARG ARCH=arm64
+ARG ZFS_CROSS_HOST=aarch64-linux-musl
+
+FROM builder-base as builder-riscv64
+ARG KERNEL_DEFCONFIG=eve_defconfig
+ARG ARCH=riscv
+ARG ZFS_CROSS_HOST=riscv64-linux-musl
+
+FROM builder-${TARGETARCH} as builder
+
+# TODO: add full support for dirty source tree
+ENV KBUILD_BUILD_USER="eve"
+ENV KBUILD_BUILD_HOST="eve"
+ENV KCONFIG_NOTIMESTAMP="true"
+
+# RUN --mount=type=bind,target=/kernel-src \
+#     if [ $(git diff --quiet HEAD -- :"/kernel-src") ] || [ $(git ls-files --other --directory --exclude-standard :"/kernel-src" | grep .) ]; then \
+#         KBUILD_BUILD_TIMESTAMP=$(LC_ALL=C date) \
+#         SOURCE_DATE_EPOCH=$(date +%s) \
+#         KBUILD_BUILD_USER=$(whoami | $SED 's/\\/\\\\/') \
+#         KBUILD_BUILD_HOST=$(uname -n) \
+#         KCONFIG_NOTIMESTAMP="false" \
+#     else \
+#         SOURCE_DATE_EPOCH=$(git log -1 --format=%ct "/kernel-src") \
+#         KBUILD_BUILD_TIMESTAMP=$(git log -1 --format=%cd "/kernel-src" | cut -f1 -d"+") \
+#     fi
+
+# need to bind mount as readwrite so mrproper works on /kernel-src
+RUN  --mount=type=bind,target=/kernel-src,readwrite \
+     --mount=type=cache,target=/root/.cache/ccache \
+     ccache -z && \
+     # clean source tree, it should be done exactly this way (no make -C)
+     cd /kernel-src && make ARCH=${ARCH} LLVM=1 -j$(nproc) mrproper && \
+     # --mount=type=bind cannot mount to target=/ so we have to do out-of-tree build for kernel
+     make -C /kernel-src O=/kernel-out CC="ccache clang" ARCH=${ARCH} LLVM=1 -j$(nproc) ${KERNEL_DEFCONFIG} && \
+     make -C /kernel-src O=/kernel-out CC="ccache clang" ARCH=${ARCH} LLVM=1 -j$(nproc) prepare && \
+     make -C /kernel-src O=/kernel-out CC="ccache clang" ARCH=${ARCH} LLVM=1 -j$(nproc) && \
+     make -C /kernel-src O=/kernel-out CC="ccache clang" ARCH=${ARCH} LLVM=1 -j$(nproc) INSTALL_MOD_STRIP=1 \
+     INSTALL_MOD_PATH=/tmp/kernel-modules modules_install && \
+     ccache -s
+FROM builder as zfs-config
+
+# build ZFS module out-of-tree
+ADD https://github.com/mikem-zed/zfs.git#eve-zfs-2.1.12 /tmp/zfs
+WORKDIR /tmp/zfs
+RUN --mount=type=bind,target=/kernel-src,readwrite \
+    --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=cache,target=/tmp/zfs/build \
+    ./autogen.sh
+
+RUN --mount=type=bind,target=/kernel-src,readwrite \
+    --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=cache,target=/tmp/zfs/build \
+    CC="clang" LD="ld.lld" STRIP="llvm-strip" AR="llvm-ar" ./configure -v \
+    --with-config=kernel \
+    --with-linux=/kernel-src \ 
+    --with-linux-obj=/kernel-out \
+    # unfortunately $ARCH is not enough for ./configure to detect cross compiler
+    --host=${ZFS_CROSS_HOST} \  
+    --build=${BUILDARCH}-${BUILDOS}-musl \
+    KERNEL_LLVM=1 \
+    # we cannot set "ccashe clang" cecause autoconf scripts do not properly escape
+    # spaces in CC variable. But it should be ok for ./configure
+    KERNEL_CC="clang" \
+    KERNEL_LD="ld.lld" && \
+    ./scripts/make_gitrev.sh
+
+FROM zfs-config as zfs-build
+
+RUN --mount=type=bind,target=/kernel-src,readwrite \
+    --mount=type=cache,target=/root/.cache/ccache \
+    --mount=type=cache,target=/tmp/zfs/build \
+    # here we can use ccashe again
+    make -C module CC="ccashe clang" -j$(nproc) && \
+    make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
+    ccache -s
+
+# FROM scratch
+
+
+
+
