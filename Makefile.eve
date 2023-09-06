@@ -1,0 +1,38 @@
+# Title: Dockerfile for building the EVE kernel
+VERSION=$(shell git describe --always --dirty)
+EVE_FLAVOR=generic
+ARCHITECTURE=amd64
+KERNEL_TAG=$(shell git describe --tags --abbrev=0)
+BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
+PLATFORM=linux/$(ARCHITECTURE)
+
+SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
+# make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
+KBUILD_BUILD_TIMESTAMP=$(shell git log -1 --format=%cd | cut -f1 -d"+")
+
+.PHONY: all help
+
+all: kernel-gcc
+
+help: Makefile
+	@echo
+	@echo "Makefile to build EVE kernel"
+	@echo "Usage: make [target]"
+	@echo "Targets:"
+	@echo "  kernel-gcc: build kernel with gcc"
+	@echo "  kernel-clang: build kernel with clang"
+	@echo "  docker-tag-gcc: print docker tag for gcc kernel"
+	@echo "  docker-tag-clang: print docker tag for clang kernel"
+	@echo
+	
+kernel-%: Dockerfile.%
+	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
+	docker buildx build \
+	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
+	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
+	--platform $(PLATFORM) -t $(BRANCH):$(VERSION)-$* --load -f Dockerfile.$* .
+
+docker-tag-%:
+	@echo "docker.io/lfedge/$(BRANCH):$(VERSION)-$*"
+
+
