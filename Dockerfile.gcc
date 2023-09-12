@@ -1,7 +1,7 @@
 #syntax=docker/dockerfile:1.6
 ARG ALPINE_VERSION=3.16
 ARG KERNEL_CONFIG=eve_defconfig
-ARG KERNEL_BIN=arch/x86/boot/bzImage
+ARG KERNEL_BIN=arch/arm64/boot/Image
 # set from a Makefile.eve
 ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
@@ -99,7 +99,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH}
     && make O=/kernel-out -j$(nproc) \
     && make O=/kernel-out -j$(nproc) modules \
     && make O=/kernel-out -j$(nproc) modules_install INSTALL_MOD_STRIP=1 \
-        INSTALL_MOD_PATH=/tmp/kernel-modules && \
+        INSTALL_MOD_PATH=/tmp/kernel-modules \
+    && make O=/kernel-out -j$(nproc) \
+        INSTALL_DTBS_PATH=/tmp/kernel-modules/boot/dtb dtbs_install && \
     ccache -s
 
 ADD https://github.com/mikem-zed/zfs.git#eve-zfs-2.1.12 /tmp/zfs
