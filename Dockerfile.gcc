@@ -1,20 +1,21 @@
 #syntax=docker/dockerfile:1.6
 ARG ALPINE_VERSION=3.16
-ARG KERNEL_CONFIG=eve_defconfig
-ARG KERNEL_BIN=arch/x86/boot/bzImage
+ARG KERNEL_CONFIG=tegra_eveos_defconfig
+ARG KERNEL_BIN=arch/arm64/boot/Image
 # set from a Makefile.eve
 ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
 
 FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
 RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
-    automake \ 
+    automake \
     autoconf \
     libtool \
     util-linux-dev \
     libtirpc-dev \
     libaio-dev \
     python3 \
+    py3-sphinx \
     openssl \
     linux-headers \
     rsync
@@ -36,12 +37,12 @@ COPY --from=cross-compilers /packages /packages
 
 FROM builder-cross-base as builder-target-arm64
 ARG COMPILER_TARGET_ARCH=aarch64
-ENV ARCH=arm64 
+ENV ARCH=arm64
 ENV CROSS_COMPILE="ccache aarch64-alpine-linux-musl-"
 
 FROM builder-cross-base as builder-target-amd64
 ARG COMPILER_TARGET_ARCH=x86_64
-ENV ARCH=x86_64 
+ENV ARCH=x86_64
 ENV CROSS_COMPILE="ccache x86_64-alpine-linux-musl-"
 
 FROM builder-target-${TARGETARCH} as builder-target
@@ -51,7 +52,7 @@ RUN apk add --no-cache --allow-untrusted -X /packages build-base-${COMPILER_TARG
 RUN mkdir -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk && \
     cp /etc/apk/repositories /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk/ && \
     cp /etc/resolv.conf /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/ && \
-    apk add -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl --initdb -U \ 
+    apk add -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl --initdb -U \
         --arch ${COMPILER_TARGET_ARCH} --allow-untrusted musl-dev libgcc
 
 FROM builder-target as builder-amd64-arm64
@@ -78,7 +79,7 @@ ARG KERNEL_BIN
 # ARCH is always set to the target arch
 # CROSS_COMPILE is set to empty string for native builds
 COPY . /kernel-src
-WORKDIR /kernel-src
+WORKDIR /kernel-src/kernel/kernel-5.10
 
 RUN sed -i Makefile -e 's/--build-id=sha1/--build-id=none/g'
 
@@ -101,6 +102,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH}
         INSTALL_MOD_PATH=/tmp/kernel-modules && \
     ccache -s
 
+# Install NVIDIA's DTBs
+WORKDIR /kernel-out
+RUN if [ "${TARGETARCH}" = arm64 ]; then \
+       mkdir -p /tmp/kernel-modules/boot/dtb/nvidia && \
+       for dtb in arch/arm64/boot/dts/nvidia/*.dtb; do \
+           cp $dtb /tmp/kernel-modules/boot/dtb/nvidia/ ;\
+       done; \
+    fi
+
 ADD https://github.com/mikem-zed/zfs.git#eve-zfs-2.1.12 /tmp/zfs
 WORKDIR /tmp/zfs
 
@@ -108,7 +118,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
     ./autogen.sh && \
     echo "Building ZFS for ${TARGETARCH} with ARCH=${ARCH}, CROSS_COMPILE=${CROSS_COMPILE} and ZFS_CONFIGURE_TARGETS=${ZFS_CONFIGURE_TARGETS}" && \
     ./configure -v \
-    --with-linux=/kernel-src \ 
+    --with-linux=/kernel-src/kernel/kernel-5.10/ \
     --with-linux-obj=/kernel-out \
     # configure only kernel modules. no need for userspace libs
     --with-config=kernel \
