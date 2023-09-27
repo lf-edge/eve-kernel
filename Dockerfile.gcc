@@ -18,7 +18,8 @@ RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl cc
     py3-sphinx \
     openssl \
     linux-headers \
-    rsync
+    rsync \
+    xxd
 
 ARG TARGETARCH
 ARG BUILDPLATFORM
