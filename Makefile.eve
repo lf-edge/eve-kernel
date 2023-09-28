@@ -1,6 +1,6 @@
 # Title: Dockerfile for building the EVE kernel
 VERSION=$(shell git describe --always --dirty)
-EVE_FLAVOR=generic
+EVE_FLAVOR=nvidia
 ARCHITECTURE=arm64
 KERNEL_TAG=v5.10.104
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
