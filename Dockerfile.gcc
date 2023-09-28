@@ -19,7 +19,8 @@ RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl cc
     openssl \
     linux-headers \
     rsync \
-    xxd
+    xxd \
+    kmod
 
 ARG TARGETARCH
 ARG BUILDPLATFORM
@@ -130,6 +131,23 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
     make -C module -j$(nproc) && \
     make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
     ccache -s
+
+# rtw88 wireless driver
+ENV RTW88_REVISION=master
+ADD https://github.com/lwfinger/rtw88.git#${RTW88_REVISION} /tmp/rtw88
+WORKDIR /tmp/rtw88
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=rtw88-ccache-${TARGETARCH} \
+    KVER=$(cat /kernel-out/include/config/kernel.release) && \
+    make -j $(nproc) \
+        CROSS_COMPILE="${CROSS_COMPILE}" ARCH="${ARCH}" KVER="$KVER" \
+        KSRC=/kernel-out && \
+    make -j $(nproc) \
+        CROSS_COMPILE="${CROSS_COMPILE}" ARCH="${ARCH}" KVER="$KVER" \
+        KSRC=/kernel-out \
+        INSTALL_MOD_PATH=/tmp/kernel-modules \
+        MODDESTDIR=/tmp/kernel-modules/lib/modules/${KVER}/kernel/drivers/net/wireless/rtw88 \
+        install
 
 FROM builder as artifacts
 
