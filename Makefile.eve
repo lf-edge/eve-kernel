@@ -1,5 +1,6 @@
 # Title: Dockerfile for building the EVE kernel
-VERSION=$(shell git describe --always --dirty)
+VERSION=$(shell git rev-parse --short HEAD)
+DIRTY=$(shell git diff --quiet || echo '-dirty')
 EVE_FLAVOR=generic
 ARCHITECTURE=amd64
 KERNEL_TAG=$(shell git describe --tags --abbrev=0)
@@ -33,6 +34,6 @@ kernel-%: Dockerfile.%
 	--platform $(PLATFORM) -t $(BRANCH):$(VERSION)-$* --load -f Dockerfile.$* .
 
 docker-tag-%:
-	@echo "docker.io/lfedge/$(BRANCH):$(VERSION)-$*"
+	@echo "docker.io/lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$*"
 
 
