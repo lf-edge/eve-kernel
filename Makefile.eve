@@ -5,6 +5,7 @@ EVE_FLAVOR=generic
 ARCHITECTURE=amd64
 KERNEL_TAG=v6.1.38
 PLATFORM=linux/$(ARCHITECTURE)
+
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
 # make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
