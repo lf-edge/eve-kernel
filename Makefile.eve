@@ -38,4 +38,3 @@ help:
 	@echo "  docker-tag-gcc: print docker tag for gcc kernel"
 	@echo "  docker-tag-clang: print docker tag for clang kernel"
 	@echo
-
