@@ -30,11 +30,11 @@ kernel-%: Dockerfile.%
 	docker buildx build \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
 	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
-	--platform $(PLATFORM) -t lf-edge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$* --load -f Dockerfile.$* .
+	--platform $(PLATFORM) -t lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$* --load -f Dockerfile.$* .
 
 docker-tag-%:
 	@echo "docker.io/lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$*"
 
 push-%: kernel-%
 	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
-	docker push lf-edge/eve-kernel:$(BRANCH)-$(VERSION)-$*
+	docker push lfedge/eve-kernel:$(BRANCH)-$(VERSION)-$*
