@@ -1,6 +1,8 @@
 ---
 name: eve-kernel build
 on:  # yamllint disable-line rule:truthy
+  pull_request_review:
+    types: [submitted]
   push:
     branches:
       - "eve-kernel-amd64-v6.1.38-generic"
@@ -12,6 +14,7 @@ concurrency:
 jobs:
   packages:
     runs-on: self-hosted
+    if: github.event.review.state == 'approved'
     steps:
       - name: Get eve-kernel
         uses: actions/checkout@v3
@@ -22,6 +25,10 @@ jobs:
         with:
           username: ${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}
           password: ${{ secrets.RELEASE_DOCKERHUB_TOKEN }}
+      - name: Login to DockerHUB
+        run: |
+          echo "${{ secrets.RELEASE_DOCKERHUB_TOKEN }}" |\
+             docker login -u "${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}" --password-stdin
       - name: Build eve-kernel-amd64-v6.1.38-generic
         run: |
           make -f Makefile.eve BRANCH?=${GITHUB_REF##*/} push-gcc
