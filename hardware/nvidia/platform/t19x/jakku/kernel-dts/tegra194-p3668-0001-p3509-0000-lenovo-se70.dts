@@ -242,6 +242,14 @@
 	};
 };
 
+&hdr40_i2c1 {
+	nct5635y@20 {
+		compatible = "lenovo,thinkedge-se70";
+		reg = <0x20>;
+		status = "okay";
+	};
+};
+
 &tegra_sound {
 	assigned-clock-rates = <0x00 0xbb8000>;
 	nvidia,num-codec-link = <0x02>;
