@@ -14,7 +14,7 @@ concurrency:
 jobs:
   packages:
     runs-on: self-hosted
-    if: github.event.review.state == 'approved'
+      # : github.event.review.state == 'approved'
     steps:
       - name: Get eve-kernel
         uses: actions/checkout@v3
