@@ -28,6 +28,11 @@ jobs:
         with:
           username: ${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}
           password: ${{ secrets.RELEASE_DOCKERHUB_TOKEN }}
+      - name: Login to DockerHUB
+        if: ( github.event_name == 'pull_request' && github.event.pull_request.merged == true ) || github.event_name == 'push'  # Only if PR is merged or it was direct push
+        run: |
+          echo "${{ secrets.RELEASE_DOCKERHUB_TOKEN }}" |\
+             docker login -u "${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}" --password-stdin
       - name: Push eve-kernel-amd64-v6.1.38-generic if PR approved or pushed
         if: ( github.event_name == 'pull_request' && github.event.pull_request.merged == true ) || github.event_name == 'push'  # Only if PR is merged or it was direct push
         run: |
