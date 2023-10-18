@@ -79,7 +79,7 @@ push-clang: push-image-clang
 docker-tag-generate-%:
 	@echo "docker.io/lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$*"
 
-push-image-%: kernel-%
+push-image-%:
 	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
 	docker push lfedge/eve-kernel:$(BRANCH)-$(VERSION)-$*
 
