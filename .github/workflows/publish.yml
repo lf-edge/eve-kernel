@@ -20,7 +20,7 @@ jobs:
       - name: Get eve-kernel
         uses: actions/checkout@v3
         with:
-          ref: "eve-kernel-riscv64-v6.1.38-generic"
+          ref: ${{ github.head_ref }}
 
       - name: Build eve-kernel-riscv64
         run: |
@@ -35,4 +35,4 @@ jobs:
       - name: Push eve-kernel-riscv64-v6.1.38-generic if PR approved or pushed
         if: github.ref == 'refs/heads/eve-kernel-riscv64-v6.1.38-generic'
         run: |
-            make -f Makefile.eve BRANCH?=${GITHUB_REF##*/} push-gcc
+          make -f Makefile.eve BRANCH?=${GITHUB_REF##*/} push-gcc
