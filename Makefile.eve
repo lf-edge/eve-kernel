@@ -34,6 +34,7 @@ kernel-%: Dockerfile.%
 	docker buildx build \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
 	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
+	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
 	--platform $(PLATFORM) -t lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$* --load -f Dockerfile.$* .
 
 docker-tag-%:
