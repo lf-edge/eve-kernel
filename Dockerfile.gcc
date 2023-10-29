@@ -5,6 +5,7 @@ ARG KERNEL_BIN=arch/x86/boot/bzImage
 # set from a Makefile.eve
 ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
+ARG LOCALVERSION
 
 FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
 RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
@@ -75,6 +76,7 @@ ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
 ARG KERNEL_CONFIG
 ARG KERNEL_BIN
+ARG LOCALVERSION
 # ARCH and CROSS_COMPILE are inherited from builder-${TARGETARCH}-${BUILDARCH}
 # ARCH is always set to the target arch
 # CROSS_COMPILE is set to empty string for native builds
@@ -95,12 +97,12 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH}
     echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" && \
     make -j$(nproc) mrproper \
     && make O=/kernel-out ${KERNEL_CONFIG} \
-    && make O=/kernel-out -j$(nproc) prepare \
-    && make O=/kernel-out -j$(nproc) \
-    && make O=/kernel-out -j$(nproc) modules \
-    && make O=/kernel-out -j$(nproc) modules_install INSTALL_MOD_STRIP=1 \
-        INSTALL_MOD_PATH=/tmp/kernel-modules && \
-    ccache -s
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) prepare \
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) \
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) modules \
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) modules_install INSTALL_MOD_STRIP=1 \
+        INSTALL_MOD_PATH=/tmp/kernel-modules \
+    && ccache -s
 
 ADD https://github.com/mikem-zed/zfs.git#eve-zfs-2.1.12 /tmp/zfs
 WORKDIR /tmp/zfs
