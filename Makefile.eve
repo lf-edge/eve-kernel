@@ -28,9 +28,37 @@ help: Makefile
 	@echo "  kernel-clang: build kernel with clang"
 	@echo "  docker-tag-gcc: print docker tag for gcc kernel"
 	@echo "  docker-tag-clang: print docker tag for clang kernel"
+	@echo "  push-gcc: push gcc kernel to docker.io"
+	@echo "  push-clang: push clang kernel to docker.io"
+	@echo "  clean: remove generated files"
 	@echo
 
-kernel-%: Dockerfile.%
+pull-eve-build-tools:
+	docker pull lfedge/eve-build-tools:main
+.PHONY: pull-eve-build-tools
+
+# do not build sbom target directly, it depends on DOCKERFILE varuable set by kernel-gcc or kernel-clang
+SBOM_TARGETS=kernel-sbom-gh.spdx.json kernel-sbom-docker.spdx.json
+sbom: $(SBOM_TARGETS)
+
+kernel-sbom-gh.spdx.json: pull-eve-build-tools
+	docker run  -v $(PWD):/in lfedge/eve-build-tools:main github-sbom-generator \
+			generate --format spdx-json /in/ | jq . > ./kernel-sbom-gh.spdx.json
+
+#if DOCKERFILE is not set, this target will fail
+kernel-sbom-docker.spdx.json: pull-eve-build-tools $(DOCKERFILE)
+	@if [ -z "$(DOCKERFILE)" ]; then \
+		echo "DOCKERFILE not set. Do not build 'sbom' target directly"; \
+		exit 1; \
+	fi
+	@echo "Generating SBOM for $(DOCKERFILE)"
+	docker run -v $(PWD):/in lfedge/eve-build-tools:main dockerfile-add-scanner scan /in/$(DOCKERFILE) \
+		--format spdx-json | jq . > ./kernel-sbom-docker.spdx.json
+
+kernel-gcc: DOCKERFILE:=Dockerfile.gcc
+kernel-clang: DOCKERFILE:=Dockerfile.clang
+
+kernel-build-%: sbom Makefile.eve
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
 	docker buildx build \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
@@ -38,9 +66,23 @@ kernel-%: Dockerfile.%
 	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
 	--platform $(PLATFORM) -t lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$* --load -f Dockerfile.$* .
 
-docker-tag-%:
+# we need these intermediate targets to make .PHONY work for pattern rules
+kernel-gcc: kernel-build-gcc
+kernel-clang: kernel-build-clang
+docker-tag-gcc: docker-tag-generate-gcc
+docker-tag-clang: docker-tag-generate-clang
+push-gcc: push-image-gcc
+push-clang: push-image-clang
+
+.PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang
+
+docker-tag-generate-%:
 	@echo "docker.io/lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$*"
 
-push-%: kernel-%
+push-image-%: kernel-%
 	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
 	docker push lfedge/eve-kernel:$(BRANCH)-$(VERSION)-$*
+
+.PHONY: clean
+clean:
+	rm -f $(SBOM_TARGETS)
