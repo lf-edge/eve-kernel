@@ -169,6 +169,10 @@ RUN DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdept
          tar cf - -T - | (cd $dir; tar xf -) && \
     ( cd /tmp && tar cf /out/kernel-dev.tar usr/src )
 
+# copy SBOM files
+RUN cp /kernel-src/kernel-sbom-docker.spdx.json /out/ && \
+    cp /kernel-src/kernel-sbom-gh.spdx.json /out/
+
 FROM scratch
 ENTRYPOINT []
 CMD []
