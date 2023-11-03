@@ -5,6 +5,7 @@ EVE_FLAVOR=generic
 ARCHITECTURE=amd64
 KERNEL_TAG=v6.1.38
 PLATFORM=linux/$(ARCHITECTURE)
+BUILD_USER:=$(shell id -un)
 
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
@@ -13,6 +14,13 @@ KBUILD_BUILD_TIMESTAMP=$(shell git log -1 --format=%cd | cut -f1 -d"+")
 
 ifeq ($(BUILDKIT_PROGRESS),)
     export BUILDKIT_PROGRESS := plain
+endif
+
+# if BRANCH is defined on a command line we are running under CI
+# we add user name to DIRTY to avoid docker tag conflicts
+# when building on a shared machine with shared docker cache
+ifeq ($(origin BRANCH), file)
+	DIRTY:=-$(BUILD_USER)$(DIRTY)
 endif
 
 .PHONY: all help
@@ -37,7 +45,7 @@ pull-eve-build-tools:
 	docker pull lfedge/eve-build-tools:main
 .PHONY: pull-eve-build-tools
 
-# do not build sbom target directly, it depends on DOCKERFILE varuable set by kernel-gcc or kernel-clang
+# do not build sbom target directly, it depends on DOCKERFILE variable set by kernel-gcc or kernel-clang
 SBOM_TARGETS=kernel-sbom-gh.spdx.json kernel-sbom-docker.spdx.json
 sbom: $(SBOM_TARGETS)
 
