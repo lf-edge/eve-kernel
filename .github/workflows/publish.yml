@@ -27,6 +27,7 @@ jobs:
           make -f Makefile.eve BRANCH?=${GITHUB_REF##*/} kernel-gcc
 
       - name: Log in to Docker Hub
+        if: github.ref == 'refs/heads/eve-kernel-amd64-v6.1.38-generic'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}
