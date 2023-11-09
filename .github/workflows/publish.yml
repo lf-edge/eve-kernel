@@ -17,7 +17,7 @@ concurrency:
 jobs:
   packages:
     runs-on: self-hosted
-    if: ${{ github.event.review.state == 'approved' || github.ref == 'refs/heads/eve-kernel-amd64-v6.1.38-generic' }}
+    if: ${{ github.event.review.state == 'approved' }} || github.ref == env.branch_name
     steps:
       - name: Get eve-kernel
         uses: actions/checkout@v3
