@@ -47,6 +47,7 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <linux/spinlock.h>
+#include <linux/local_lock.h>
 #include <linux/eventfd.h>
 #include <linux/poll.h>
 #include <linux/sort.h>
@@ -77,6 +78,8 @@ struct cgroup_subsys memory_cgrp_subsys __read_mostly;
 EXPORT_SYMBOL(memory_cgrp_subsys);
 
 struct mem_cgroup *root_mem_cgroup __read_mostly;
+
+static DEFINE_PER_CPU(local_lock_t, llock) = INIT_LOCAL_LOCK(llock);
 
 /* Active memory cgroup to use from an interrupt context */
 DEFINE_PER_CPU(struct mem_cgroup *, int_active_memcg);
@@ -956,9 +959,6 @@ static bool mem_cgroup_event_ratelimit(struct mem_cgroup *memcg,
  */
 static void memcg_check_events(struct mem_cgroup *memcg, int nid)
 {
-	if (IS_ENABLED(CONFIG_PREEMPT_RT))
-		return;
-
 	/* threshold event is triggered in finer grain than soft limit */
 	if (unlikely(mem_cgroup_event_ratelimit(memcg,
 						MEM_CGROUP_TARGET_THRESH))) {
@@ -2105,9 +2105,9 @@ again:
 		return;
 
 #ifdef CONFIG_PROVE_LOCKING
-	local_irq_save(flags);
+	local_lock_irqsave(&llock, flags);
 	might_lock(&memcg->move_lock);
-	local_irq_restore(flags);
+	local_unlock_irqrestore(&llock, flags);
 #endif
 
 	if (atomic_read(&memcg->moving_account) <= 0)
@@ -3850,12 +3850,8 @@ static ssize_t mem_cgroup_write(struct kernfs_open_file *of,
 		}
 		break;
 	case RES_SOFT_LIMIT:
-		if (IS_ENABLED(CONFIG_PREEMPT_RT)) {
-			ret = -EOPNOTSUPP;
-		} else {
-			memcg->soft_limit = nr_pages;
-			ret = 0;
-		}
+		memcg->soft_limit = nr_pages;
+		ret = 0;
 		break;
 	}
 	return ret ?: nbytes;
@@ -4841,9 +4837,6 @@ static ssize_t memcg_write_event_control(struct kernfs_open_file *of,
 	char *endp;
 	int ret;
 
-	if (IS_ENABLED(CONFIG_PREEMPT_RT))
-		return -EOPNOTSUPP;
-
 	buf = strstrip(buf);
 
 	efd = simple_strtoul(buf, &endp, 10);
@@ -5786,12 +5779,12 @@ static int mem_cgroup_move_account(struct page *page,
 	ret = 0;
 	nid = folio_nid(folio);
 
-	local_irq_disable();
+	local_lock_irq(&llock);
 	mem_cgroup_charge_statistics(to, nr_pages);
 	memcg_check_events(to, nid);
 	mem_cgroup_charge_statistics(from, -nr_pages);
 	memcg_check_events(from, nid);
-	local_irq_enable();
+	local_unlock_irq(&llock);
 out_unlock:
 	folio_unlock(folio);
 out:
@@ -6898,10 +6891,10 @@ static int charge_memcg(struct folio *folio, struct mem_cgroup *memcg,
 	css_get(&memcg->css);
 	commit_charge(folio, memcg);
 
-	local_irq_disable();
+	local_lock_irq(&llock);
 	mem_cgroup_charge_statistics(memcg, nr_pages);
 	memcg_check_events(memcg, folio_nid(folio));
-	local_irq_enable();
+	local_unlock_irq(&llock);
 out:
 	return ret;
 }
@@ -7012,11 +7005,11 @@ static void uncharge_batch(const struct uncharge_gather *ug)
 		memcg_oom_recover(ug->memcg);
 	}
 
-	local_irq_save(flags);
+	local_lock_irqsave(&llock, flags);
 	__count_memcg_events(ug->memcg, PGPGOUT, ug->pgpgout);
 	__this_cpu_add(ug->memcg->vmstats_percpu->nr_page_events, ug->nr_memory);
 	memcg_check_events(ug->memcg, ug->nid);
-	local_irq_restore(flags);
+	local_unlock_irqrestore(&llock, flags);
 
 	/* drop reference from uncharge_folio */
 	css_put(&ug->memcg->css);
@@ -7156,10 +7149,10 @@ void mem_cgroup_migrate(struct folio *old, struct folio *new)
 	css_get(&memcg->css);
 	commit_charge(new, memcg);
 
-	local_irq_save(flags);
+	local_lock_irqsave(&llock, flags);
 	mem_cgroup_charge_statistics(memcg, nr_pages);
 	memcg_check_events(memcg, folio_nid(new));
-	local_irq_restore(flags);
+	local_unlock_irqrestore(&llock, flags);
 }
 
 DEFINE_STATIC_KEY_FALSE(memcg_sockets_enabled_key);
