@@ -55,7 +55,16 @@ static struct uart_driver serial8250_reg;
 
 static unsigned int skip_txen_test; /* force skip of txen test at init time */
 
-#define PASS_LIMIT	512
+/*
+ * On -rt we can have more delays, and legitimately
+ * so - make thread as short as possible, because the
+ * second interrupt can cause unhandled interrupt.
+ */
+#ifdef CONFIG_PREEMPT_RT
+# define PASS_LIMIT	16
+#else
+# define PASS_LIMIT	512
+#endif
 
 #include <asm/serial.h>
 /*
