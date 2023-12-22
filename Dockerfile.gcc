@@ -124,6 +124,15 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
     make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
     ccache -s
 
+# Hailo GPU driver
+# we do not use Makefile and directly build out-of-tree module
+ADD https://github.com/hailo-ai/hailort-drivers.git#v4.15.0 /tmp/hailo
+WORKDIR /tmp/hailo/linux/pcie
+RUN make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" M=/tmp/hailo/linux/pcie -C /kernel-src -j$(nproc) && \
+    make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" M=/tmp/hailo/linux/pcie -C /kernel-src INSTALL_MOD_STRIP=1 \
+    INSTALL_MOD_PATH=/tmp/kernel-modules modules_install
+
+
 FROM builder as artifacts
 
 WORKDIR /kernel-out
