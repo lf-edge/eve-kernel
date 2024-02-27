@@ -7,6 +7,12 @@ KERNEL_TAG=v6.1.38
 PLATFORM=linux/$(ARCHITECTURE)
 BUILD_USER:=$(shell id -un)
 
+IMAGE_REPOSITORY?=lfedge/eve-kernel
+
+LINUXKIT_VERSION=58c36c9eb0c32acf66ae7877d18a9ad24d59d73e
+GOBIN=/tmp/linuxkit-$(LINUXKIT_VERSION)
+LK=$(GOBIN)/linuxkit
+
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
 # make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
@@ -41,20 +47,24 @@ help: Makefile
 	@echo "  clean: remove generated files"
 	@echo
 
-pull-eve-build-tools:
-	docker pull lfedge/eve-build-tools:main
-.PHONY: pull-eve-build-tools
+.PHONY: linuxkit
+linuxkit: $(LK)
+$(LK):
+	GOBIN=$(GOBIN) go install github.com/linuxkit/linuxkit/src/cmd/linuxkit@$(LINUXKIT_VERSION)
 
-kernel-gcc: DOCKERFILE:=Dockerfile.gcc
-kernel-clang: DOCKERFILE:=Dockerfile.clang
+KERNEL_OCI_FILE:=$(shell mktemp -u)-kernel.tar
 
-kernel-build-%: Makefile.eve
+kernel-build-%: Makefile.eve linuxkit
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
 	docker buildx build \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
 	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
 	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
-	--platform $(PLATFORM) -t lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$* --load -f Dockerfile.$* .
+	--platform $(PLATFORM) -t $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$* \
+	--sbom=true --output=type=oci,dest=$(KERNEL_OCI_FILE) -f Dockerfile.$* .
+	$(LK) cache import $(KERNEL_OCI_FILE)
+	rm -f $(KERNEL_OCI_FILE)
+
 
 # we need these intermediate targets to make .PHONY work for pattern rules
 kernel-gcc: kernel-build-gcc
@@ -67,11 +77,11 @@ push-clang: push-image-clang
 .PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang
 
 docker-tag-generate-%:
-	@echo "docker.io/lfedge/eve-kernel:$(BRANCH)-$(VERSION)$(DIRTY)-$*"
+	@echo "docker.io/$(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$*"
 
 push-image-%:
 	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
-	docker push lfedge/eve-kernel:$(BRANCH)-$(VERSION)-$*
+	$(LK) cache push $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)-$*
 
 .PHONY: clean
 clean:
