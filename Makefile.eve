@@ -45,28 +45,10 @@ pull-eve-build-tools:
 	docker pull lfedge/eve-build-tools:main
 .PHONY: pull-eve-build-tools
 
-# do not build sbom target directly, it depends on DOCKERFILE variable set by kernel-gcc or kernel-clang
-SBOM_TARGETS=kernel-sbom-gh.spdx.json kernel-sbom-docker.spdx.json
-sbom: $(SBOM_TARGETS)
-
-kernel-sbom-gh.spdx.json: pull-eve-build-tools
-	docker run  -v $(PWD):/in lfedge/eve-build-tools:main github-sbom-generator \
-			generate --format spdx-json /in/ | jq . > ./kernel-sbom-gh.spdx.json
-
-#if DOCKERFILE is not set, this target will fail
-kernel-sbom-docker.spdx.json: pull-eve-build-tools $(DOCKERFILE)
-	@if [ -z "$(DOCKERFILE)" ]; then \
-		echo "DOCKERFILE not set. Do not build 'sbom' target directly"; \
-		exit 1; \
-	fi
-	@echo "Generating SBOM for $(DOCKERFILE)"
-	docker run -v $(PWD):/in lfedge/eve-build-tools:main dockerfile-add-scanner scan /in/$(DOCKERFILE) \
-		--format spdx-json | jq . > ./kernel-sbom-docker.spdx.json
-
 kernel-gcc: DOCKERFILE:=Dockerfile.gcc
 kernel-clang: DOCKERFILE:=Dockerfile.clang
 
-kernel-build-%: sbom Makefile.eve
+kernel-build-%: Makefile.eve
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
 	docker buildx build \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
@@ -93,4 +75,4 @@ push-image-%:
 
 .PHONY: clean
 clean:
-	rm -f $(SBOM_TARGETS)
+	echo "Cleaning"
