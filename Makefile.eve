@@ -13,6 +13,9 @@ LINUXKIT_VERSION=58c36c9eb0c32acf66ae7877d18a9ad24d59d73e
 GOBIN=/tmp/linuxkit-$(LINUXKIT_VERSION)
 LK=$(GOBIN)/linuxkit
 
+BUILD_KIT_VERSION=v0.12.5
+BUILD_KIT_BUILDER=eve-kernel-builder-$(BUILD_KIT_VERSION)
+
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
 # make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
@@ -47,6 +50,12 @@ help: Makefile
 	@echo "  clean: remove generated files"
 	@echo
 
+.PHONY: ensure-builder
+ensure-builder:
+	docker buildx inspect $(BUILD_KIT_BUILDER) 2>/dev/null || \
+	docker buildx create --name $(BUILD_KIT_BUILDER) \
+	--driver docker-container --bootstrap --driver-opt=image=moby/buildkit:$(BUILD_KIT_VERSION)
+
 .PHONY: linuxkit
 linuxkit: $(LK)
 $(LK):
@@ -54,9 +63,10 @@ $(LK):
 
 KERNEL_OCI_FILE:=$(shell mktemp -u)-kernel.tar
 
-kernel-build-%: Makefile.eve linuxkit
+kernel-build-%: Makefile.eve linuxkit | ensure-builder
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
 	docker buildx build \
+	--builder=$(BUILD_KIT_BUILDER) \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
 	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
 	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
