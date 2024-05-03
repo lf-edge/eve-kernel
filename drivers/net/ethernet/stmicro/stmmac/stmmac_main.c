@@ -7293,7 +7293,9 @@ int stmmac_dvr_probe(struct device *device,
 
 	pm_runtime_get_noresume(device);
 	pm_runtime_set_active(device);
-	if (!pm_runtime_enabled(device))
+
+	/* For PCI devices PM is disabled/enabled by the framework */
+	if (!priv->plat->pdev)
 		pm_runtime_enable(device);
 
 	if (priv->hw->pcs != STMMAC_PCS_TBI &&
@@ -7396,7 +7398,10 @@ int stmmac_dvr_remove(struct device *dev)
 	mutex_destroy(&priv->lock);
 	bitmap_free(priv->af_xdp_zc_qps);
 
-	pm_runtime_disable(dev);
+	/* For PCI devices PM is disabled/enabled by the framework */
+	if (!priv->plat->pdev)
+		pm_runtime_disable(dev);
+
 	pm_runtime_put_noidle(dev);
 
 	return 0;
