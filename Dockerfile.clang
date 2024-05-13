@@ -24,6 +24,7 @@ RUN apk add --no-cache \
     bash \
     findutils \
     diffutils \
+    pahole \
     perl \
     ccache \
     # for ZFS
