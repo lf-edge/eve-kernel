@@ -15,6 +15,7 @@ RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl cc
     util-linux-dev \
     libtirpc-dev \
     libaio-dev \
+    pahole \
     python3 \
     openssl \
     linux-headers \
