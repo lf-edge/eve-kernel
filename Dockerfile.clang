@@ -111,7 +111,7 @@ RUN --mount=type=bind,target=/kernel-src,readwrite \
     --host=${ZFS_CROSS_HOST} \
     --build=${BUILDARCH}-${BUILDOS}-musl \
     KERNEL_LLVM=1 \
-    # we cannot set "ccashe clang" cecause autoconf scripts do not properly escape
+    # we cannot set "ccache clang" because autoconf scripts do not properly escape
     # spaces in CC variable. But it should be ok for ./configure
     KERNEL_CC="clang" \
     KERNEL_LD="ld.lld" && \
@@ -122,8 +122,8 @@ FROM zfs-config as zfs-build
 RUN --mount=type=bind,target=/kernel-src,readwrite \
     --mount=type=cache,target=/root/.cache/ccache \
     --mount=type=cache,target=/tmp/zfs/build \
-    # here we can use ccashe again
-    make -C module CC="ccashe clang" -j$(nproc) && \
+    # here we can use ccache again
+    make -C module CC="ccache clang" -j$(nproc) && \
     make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
     ccache -s
 
