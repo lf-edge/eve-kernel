@@ -93,6 +93,9 @@ ENV KCONFIG_NOTIMESTAMP="true"
 ENV KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP}"
 ENV SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
 
+# ensure CONFIG_BPF_KPROBE_OVERRIDE is not set
+RUN ! grep -q -E 'CONFIG_BPF_KPROBE_OVERRIDE=[y|m]' .config || (echo "Cannot set this option for security reasons"; false)
+
 RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH} \
     ccache -z && \
     echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" && \
