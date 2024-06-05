@@ -2,6 +2,7 @@
 /* Copyright (c) 2011-2015 PLUMgrid, http://plumgrid.com
  * Copyright (c) 2016 Facebook
  */
+#include "linux/printk.h"
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/slab.h>
@@ -326,6 +327,9 @@ static const struct bpf_func_proto bpf_probe_read_compat_str_proto = {
 BPF_CALL_3(bpf_probe_write_user, void __user *, unsafe_ptr, const void *, src,
 	   u32, size)
 {
+	printk("bpf_probe_write_user is disabled for security reasons");
+	return -EPERM;
+	#if 0
 	/*
 	 * Ensure we're in user context which is safe for the helper to
 	 * run. This helper has no business in a kthread.
@@ -346,6 +350,7 @@ BPF_CALL_3(bpf_probe_write_user, void __user *, unsafe_ptr, const void *, src,
 		return -EPERM;
 
 	return copy_to_user_nofault(unsafe_ptr, src, size);
+	#endif
 }
 
 static const struct bpf_func_proto bpf_probe_write_user_proto = {
@@ -357,6 +362,7 @@ static const struct bpf_func_proto bpf_probe_write_user_proto = {
 	.arg3_type	= ARG_CONST_SIZE,
 };
 
+#if 0
 static const struct bpf_func_proto *bpf_get_probe_write_proto(void)
 {
 	if (!capable(CAP_SYS_ADMIN))
@@ -367,6 +373,7 @@ static const struct bpf_func_proto *bpf_get_probe_write_proto(void)
 
 	return &bpf_probe_write_user_proto;
 }
+#endif
 
 static DEFINE_RAW_SPINLOCK(trace_printk_lock);
 
@@ -1452,8 +1459,8 @@ bpf_tracing_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
 	case BPF_FUNC_get_prandom_u32:
 		return &bpf_get_prandom_u32_proto;
 	case BPF_FUNC_probe_write_user:
-		return security_locked_down(LOCKDOWN_BPF_WRITE_USER) < 0 ?
-		       NULL : bpf_get_probe_write_proto();
+		printk("BPF_FUNC_probe_write_user requested, but locked down for security reasons");
+		return NULL;
 	case BPF_FUNC_probe_read_user:
 		return &bpf_probe_read_user_proto;
 	case BPF_FUNC_probe_read_kernel:
