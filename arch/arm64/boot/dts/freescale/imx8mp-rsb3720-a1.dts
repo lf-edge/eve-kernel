@@ -360,7 +360,7 @@
 	};
 
 	st33htpi: st33htpi@2e {
-		compatible = "st,st33htpm-i2c";
+		compatible = "infineon,slb9673";
 		reg = <0x2e>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_tpm>;
