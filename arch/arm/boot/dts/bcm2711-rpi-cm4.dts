@@ -12,8 +12,8 @@
 //#include "bcm283x-rpi-usb-peripheral.dtsi"
 
 / {
-	compatible = "raspberrypi,400", "brcm,bcm2711";
-	model = "Raspberry Pi 400";
+	compatible = "raspberrypi,4-compute-module", "brcm,bcm2711";
+	model = "Raspberry Pi Compute Module 4";
 
 	chosen {
 		/* 8250 auxiliary UART instead of pl011 */
@@ -74,11 +74,23 @@
 	gpio-line-names = "BT_ON",
 			  "WL_ON",
 			  "PWR_LED_OFF",
-			  "GLOBAL_RESET",
+			  "ANT1",
 			  "VDD_SD_IO_SEL",
-			  "GLOBAL_SHUTDOWN",
+			  "CAM_GPIO",
 			  "SD_PWR_ON",
-			  "SHUTDOWN_REQUEST";
+			  "ANT2";
+
+	ant1: ant1 {
+		gpio-hog;
+		gpios = <3 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+
+	ant2: ant2 {
+		gpio-hog;
+		gpios = <7 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
 };
 
 &gpio {
@@ -184,8 +196,9 @@
 	status = "okay";
 };
 
-/* EMMC2 is used to drive the SD card */
+/* EMMC2 is used to drive the EMMC card */
 &emmc2 {
+	bus-width = <8>;
 	vqmmc-supply = <&sd_io_1v8_reg>;
 	vmmc-supply = <&sd_vcc_reg>;
 	broken-cd;
@@ -199,9 +212,9 @@
 };
 
 &genet_mdio {
-	phy1: ethernet-phy@1 {
+	phy1: ethernet-phy@0 {
 		/* No PHY interrupt */
-		reg = <0x1>;
+		reg = <0x0>;
 	};
 };
 
@@ -213,11 +226,6 @@
 		ranges;
 
 		reg = <0 0 0 0 0>;
-
-		usb@0,0 {
-			reg = <0 0 0 0 0>;
-			resets = <&reset RASPBERRYPI_FIRMWARE_RESET_ID_USB>;
-		};
 	};
 };
 
@@ -260,7 +268,8 @@
 };
 
 #include "bcm2711-rpi-ds.dtsi"
-#include "bcm283x-rpi-csi1-2lane.dtsi"
+#include "bcm283x-rpi-csi0-2lane.dtsi"
+#include "bcm283x-rpi-csi1-4lane.dtsi"
 #include "bcm283x-rpi-i2c0mux_0_44.dtsi"
 
 / {
@@ -354,12 +363,8 @@
 // =============================================
 // Board specific stuff here
 
-/ {
-	power_ctrl: power_ctrl {
-		compatible = "gpio-poweroff";
-		gpios = <&expgpio 5 0>;
-		force;
-	};
+&pcie0 {
+       brcm,enable-l1ss;
 };
 
 &sdhost {
@@ -378,19 +383,16 @@
 };
 
 &leds {
-	// Declare the LED but leave it disabled, in case a user wants to map it
-	// to a GPIO on the header
 	act_led: led-act {
 		default-state = "off";
 		linux,default-trigger = "mmc0";
-		gpios = <&gpio 0 GPIO_ACTIVE_HIGH>;
-		status = "disabled";
+		gpios = <&gpio 42 GPIO_ACTIVE_HIGH>;
 	};
 
 	pwr_led: led-pwr {
 		default-state = "off";
 		linux,default-trigger = "default-on";
-		gpios = <&gpio 42 GPIO_ACTIVE_HIGH>;
+		gpios = <&expgpio 2 GPIO_ACTIVE_LOW>;
 	};
 };
 
@@ -403,19 +405,18 @@
 	pinctrl-0 = <&audio_pins>;
 };
 
-cam0_reg: &cam_dummy_reg {
+cam0_reg: &cam1_reg {
+	gpio = <&expgpio 5 GPIO_ACTIVE_HIGH>;
 };
 
-&genet_mdio {
-	clock-frequency = <1950000>;
+i2c_csi_dsi0: &i2c0 {
 };
 
 / {
 	__overrides__ {
 		audio = <&chosen>,"bootargs{on='snd_bcm2835.enable_hdmi=1',off='snd_bcm2835.enable_hdmi=0'}";
 
-		act_led_gpio = <&act_led>,"gpios:4",
-			       <&act_led>,"status=okay";
+		act_led_gpio = <&act_led>,"gpios:4";
 		act_led_activelow = <&act_led>,"gpios:8";
 		act_led_trigger = <&act_led>,"linux,default-trigger";
 
@@ -425,5 +426,27 @@ cam0_reg: &cam_dummy_reg {
 
 		eth_led0 = <&phy1>,"led-modes:0";
 		eth_led1 = <&phy1>,"led-modes:4";
+
+		ant1 =  <&ant1>,"output-high?=on",
+			<&ant1>, "output-low?=off",
+			<&ant2>, "output-high?=off",
+			<&ant2>, "output-low?=on";
+		ant2 =  <&ant1>,"output-high?=off",
+			<&ant1>, "output-low?=on",
+			<&ant2>, "output-high?=on",
+			<&ant2>, "output-low?=off";
+		noant = <&ant1>,"output-high?=off",
+			<&ant1>, "output-low?=on",
+			<&ant2>, "output-high?=off",
+			<&ant2>, "output-low?=on";
+
+		cam0_reg = <&cam0_reg>,"status";
+		cam0_reg_gpio = <&cam0_reg>,"gpio:4",
+				  <&cam0_reg>,"gpio:0=", <&gpio>;
+		cam1_reg = <&cam1_reg>,"status";
+		cam1_reg_gpio = <&cam1_reg>,"gpio:4",
+				  <&cam1_reg>,"gpio:0=", <&gpio>;
+
+		pcie_tperst_clk_ms = <&pcie0>,"brcm,tperst-clk-ms:0";
 	};
 };
