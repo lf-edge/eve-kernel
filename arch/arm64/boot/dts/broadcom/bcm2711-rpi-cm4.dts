@@ -1,1 +1,77 @@
 #include "../../../../arm/boot/dts/bcm2711-rpi-cm4.dts"
+
+/* Nodes for OnLogic FR201 device */
+
+/* Power LED */
+&leds {
+	led-pwr {
+		default-state = "off";
+		linux,default-trigger = "none";
+	};
+};
+
+/* TPM */
+&spi6 {
+	compatible = "spi-gpio";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi6_gpio18>;
+	gpio-sck = <&gpio 21 0>;
+	gpio-mosi = <&gpio 20 0>;
+	gpio-miso = <&gpio 19 0>;
+	cs-gpios = <&gpio 18 1>;
+	spi-delay-us = <0>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	sck-gpios = <&gpio 21 0>;
+	mosi-gpios = <&gpio 20 0>;
+	miso-gpios = <&gpio 19 0>;
+	num-chipselects = <1>;
+
+	npct754: npct754@0 {
+		compatible = "infineon,slb9670", "tis,tpm2-spi", "tcg,tpm_tis-spi";
+		reg = <0>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		status = "okay";
+
+		/* for kernel driver */
+		spi-max-frequency = <1000000>;
+	};
+};
+&spi6_gpio18 {
+	brcm,pins = <18 19 20 21>;
+	brcm,function = <0>;
+};
+
+/* RTC */
+&i2c0if {
+	status = "okay";
+};
+&i2c0mux {
+	status = "okay";
+};
+&i2c_vc {
+	status = "okay";
+};
+&i2c1_pins {
+	brcm,pins = <44 45>;
+	brcm,function = <6>; /* alt 2 */
+};
+&i2c_arm {
+	#address-cells = <1>;
+	#size-cells = <0>;
+	status = "okay";
+
+	pcf85063a: pcf85063a@51 {
+		compatible = "nxp,pcf85063a";
+		reg = <0x51>;
+		status = "okay";
+	};
+};
+
+/* USB */
+&xhci {
+	status = "okay";
+};
