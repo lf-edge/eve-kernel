@@ -1914,7 +1914,7 @@ static const struct usb_device_id acm_ids[] = {
 	},
 #endif
 
-#if IS_ENABLED(CONFIG_USB_SERIAL_XR)
+#if IS_ENABLED(CONFIG_USB_SERIAL_XR) || IS_ENABLED(CONFIG_USB_SERIAL_XR_RS485)
 	{ USB_DEVICE(0x04e2, 0x1400), .driver_info = IGNORE_DEVICE },
 	{ USB_DEVICE(0x04e2, 0x1401), .driver_info = IGNORE_DEVICE },
 	{ USB_DEVICE(0x04e2, 0x1402), .driver_info = IGNORE_DEVICE },
