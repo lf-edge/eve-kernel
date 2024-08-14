@@ -64,11 +64,89 @@
 #include <linux/compat.h>
 #endif
 
+#undef CONFIG_GPIOLIB
+
 #include "xr_usb_serial_common.h"
 #include "xr_usb_serial_ioctl.h"
 
 #define DRIVER_AUTHOR "<uarttechsupport@exar.com>"
 #define DRIVER_DESC "Exar/MxL USB UART (serial port) driver version 1G"
+
+#define MAX_PORTS XR_USB_SERIAL_TTY_MINORS  // Maximum number of ports allowed
+
+struct port_config {
+	int minor;
+	int full_duplex;  // '0' for half-duplex, '1' for full-duplex
+};
+
+// Dynamically allocated array for storing port configurations
+static struct port_config *port_configs = NULL;
+static int num_ports_in_param = 0;
+
+static char *mode = NULL;
+module_param(mode, charp, 0000);
+MODULE_PARM_DESC(mode, "RS485 port mode (format: xh,xf,... where x is port number (zero based), h/f is half/full duplex). RS232 if not specified");
+
+// Helper function to parse and store port configurations
+static int parse_ports(const char *mode_str)
+{
+    char *str, *token, *temp;
+    int i = 0;
+
+    // Duplicate the mode string to avoid modifying the original
+    temp = kstrdup(mode_str, GFP_KERNEL);
+    if (!temp)
+        return -ENOMEM;
+
+    // Allocate memory for port configurations (up to MAX_PORTS)
+    port_configs = kmalloc_array(MAX_PORTS, sizeof(struct port_config), GFP_KERNEL);
+    if (!port_configs) {
+        pr_err("Memory allocation failed for port configurations\n");
+        kfree(temp);
+        return -ENOMEM;
+    }
+
+    // Split the mode string by commas and parse each part
+    str = temp;
+    while ((token = strsep(&str, ",")) != NULL) {
+        int port_num;
+        char duplex_mode;
+
+        // Parse the port number and duplex mode (xh or xf)
+        if (sscanf(token, "%d%c", &port_num, &duplex_mode) != 2) {
+            pr_err("Invalid port format: %s\n", token);
+            kfree(port_configs);
+            kfree(temp);
+            return -EINVAL;
+        }
+
+        // Validate duplex mode
+        if (duplex_mode != 'h' && duplex_mode != 'f') {
+            pr_err("Invalid duplex mode for port %d: %c\n", port_num, duplex_mode);
+            kfree(port_configs);
+            kfree(temp);
+            return -EINVAL;
+        }
+
+        // Store the parsed port configuration
+        port_configs[i].minor = port_num;
+        port_configs[i].full_duplex = duplex_mode == 'f' ? 1 : 0;
+        i++;
+
+        // Ensure we don't exceed the maximum number of ports
+        if (i >= MAX_PORTS) {
+            pr_err("Exceeded maximum number of ports (%d)\n", MAX_PORTS);
+            break;
+        }
+    }
+
+    // Update the number of parsed ports
+    num_ports_in_param = i;
+
+    kfree(temp);
+    return 0;  // Success
+}
+
 
 static struct usb_driver xr_usb_serial_driver;
 static struct tty_driver *xr_usb_serial_tty_driver;
@@ -1193,6 +1271,7 @@ static void xr_usb_serial_tty_set_termios(struct tty_struct *tty,
 			newline.bDataBits);
 		xr_usb_serial_set_line(xr_usb_serial, &xr_usb_serial->line);
 	}
+	xr_usb_serial_set_rs485_mode(xr_usb_serial);
 	xr_usb_serial_enable(xr_usb_serial);
 }
 
@@ -1313,6 +1392,28 @@ static int xr_usb_gpio_dir_output(struct gpio_chip *chip,
 	return 0;
 }
 #endif
+
+static int xr_usb_set_port_mode_from_param(struct xr_usb_serial *xr_usb_serial)
+{
+	int i;
+	int index = -1;
+	for (i = 0; i < num_ports_in_param; i++) {
+		if (port_configs[i].minor == xr_usb_serial->minor) {
+			index = i;
+			break;
+		}
+	}
+	if (index == -1) {
+		//configure as 232
+		xr_usb_serial->is_rs485 = 0;
+	}
+	else
+	{
+		xr_usb_serial->is_rs485 = 1;
+		xr_usb_serial->is_rs485_full_duplex = port_configs[i].full_duplex;
+	}
+	return 0;
+}
 
 static int xr_usb_serial_probe(struct usb_interface *intf,
 		     const struct usb_device_id *id)
@@ -1560,6 +1661,9 @@ made_compressed_probe:
 	xr_usb_serial->control = control_interface;
 	xr_usb_serial->data = data_interface;
 	xr_usb_serial->minor = minor;
+
+	xr_usb_set_port_mode_from_param(xr_usb_serial);
+
 	xr_usb_serial->dev = usb_dev;
 	xr_usb_serial->ctrl_caps = ac_management_function;
 	if (quirks & NO_CAP_LINE)
@@ -2059,6 +2163,27 @@ static const struct tty_operations xr_usb_serial_ops = {
 static int __init xr_usb_serial_init(void)
 {
 	int retval;
+	int i;
+
+	if (mode) {
+		retval = parse_ports(mode);
+		if (retval) {
+			pr_err("xr_usb_serial: failed to parse mode parameter `%s'\n", mode);
+			return retval;
+		}
+
+		for (i = 0; i < num_ports_in_param; i++)
+		{
+		 	pr_info("ttyXRUSB%d, RS485, duplex = %s\n",
+				port_configs[i].minor, port_configs[i].full_duplex ? "Full" : "Half");
+		}
+	}
+	else
+	{
+		pr_info("xr_usb_serial: no mode parameter specified, using default settings.\n");
+	}
+
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
 	xr_usb_serial_tty_driver = alloc_tty_driver(XR_USB_SERIAL_TTY_MINORS);
 #else
