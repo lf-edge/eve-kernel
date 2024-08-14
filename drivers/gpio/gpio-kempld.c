@@ -566,6 +566,7 @@ static int kempld_gpio_irq_init(struct device *dev,
 				struct gpio_chip *chip)
 {
 	int ret;
+	struct gpio_irq_chip *girq;
 
 	ret = devm_request_threaded_irq(dev, gpio->irq, NULL,
 					kempld_gpio_irq_handler, IRQF_ONESHOT,
@@ -575,13 +576,16 @@ static int kempld_gpio_irq_init(struct device *dev,
 		return ret;
 	}
 
-	ret = gpiochip_irqchip_add_nested(chip, &kempld_irqchip, 0,
-				   handle_simple_irq, IRQ_TYPE_NONE);
-	if (ret) {
-		dev_err(dev, "could not add irqchip\n");
-		return ret;
-	}
-	gpiochip_set_nested_irqchip(chip, &kempld_irqchip, gpio->irq);
+	girq = &chip->irq;
+	girq->chip = &kempld_irqchip;
+	/* This will let us handle the parent IRQ in the driver */
+	girq->parent_handler = NULL;
+	girq->num_parents = 0;
+	girq->parents = NULL;
+	girq->default_type = IRQ_TYPE_NONE;
+	girq->handler = handle_simple_irq;
+	girq->threaded = true;
+	girq->first = 0;
 
 	dev_info(dev, "Enabled IRQ functionality with IRQ %u as base\n",
 		 gpio->irq);
@@ -652,7 +656,7 @@ static int kempld_gpio_probe(struct platform_device *pdev)
 	if (gpio->irq)
 		chip->to_irq = kempld_gpio_to_irq;
 
-	ret = devm_gpiochip_add_data(dev, chip, gpio);
+	ret = kempld_gpio_irq_init(dev, gpio, chip);
 	if (ret) {
 		dev_err(dev, "Could not register GPIO chip\n");
 		return ret;
@@ -673,7 +677,7 @@ static int kempld_gpio_probe(struct platform_device *pdev)
 
 	kempld_gpio_setup_event(gpio);
 	if (gpio->irq > 0) {
-		ret = kempld_gpio_irq_init(dev, gpio, chip);
+		ret = devm_gpiochip_add_data(dev, chip, gpio);
 		if (ret) {
 			dev_err(dev, "GPIO IRQ initialization failed\n");
 			gpio->irq = -1;
