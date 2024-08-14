@@ -500,6 +500,40 @@ int xr_usb_serial_set_flow_mode(struct xr_usb_serial *xr_usb_serial, struct tty_
 
 	xr_usb_serial_set_reg(xr_usb_serial, xr_usb_serial->reg_map.uart_flow_addr, flow);
 	xr_usb_serial_set_reg(xr_usb_serial, xr_usb_serial->reg_map.uart_gpio_mode_addr, gpio_mode);
+
+	return 0;
+}
+
+int xr_usb_serial_set_rs485_mode(struct xr_usb_serial *xr_usb_serial)
+{
+	unsigned int flow;
+	unsigned int gpio_mode;
+
+	if  (xr_usb_serial->is_rs485) {
+		dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: RS485 mode on\n");
+
+		if (!xr_usb_serial->is_rs485_full_duplex) {
+			dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: RS485 Half-duplex mode\n");
+			flow = UART_FLOW_MODE_HALF_DUPLEX;
+		}
+		else
+		{
+			dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: RS485 Full-duplex mode\n");
+			flow = UART_FLOW_MODE_FULL_DUPLEX;
+		}
+		gpio_mode = UART_GPIO_MODE_GPIO5_RS485 | UART_GPIO_MODE_SEL_RS485_TX_HI;
+
+		dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: flow mode:0x%04x\n",flow);
+		dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: GPIO mode:0x%04x\n",gpio_mode);
+
+		xr_usb_serial_set_reg(xr_usb_serial, xr_usb_serial->reg_map.uart_flow_addr, flow);
+		xr_usb_serial_set_reg(xr_usb_serial, xr_usb_serial->reg_map.uart_gpio_mode_addr, gpio_mode);
+	}
+	else
+	{
+		dev_info(&xr_usb_serial->control->dev, "xr_usb_serial_set_rs485_mode: RS485 mode off\n");
+	}
+
 	return 0;
 }
 

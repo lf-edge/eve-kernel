@@ -161,6 +161,8 @@ struct xr_usb_serial {
 	struct gpio_chip xr_gpio;
 	int rv_gpio_created;
 #endif
+	bool is_rs485;
+	bool is_rs485_full_duplex;
 };
 
 #define CDC_DATA_INTERFACE_TYPE	0x0a
@@ -186,12 +188,15 @@ struct xr_usb_serial {
 #define LOOPBACK_ENABLE_RTS_CTS 	2
 #define LOOPBACK_ENABLE_DTR_DSR 	4
 
-#define UART_FLOW_MODE_NONE		0x0
-#define UART_FLOW_MODE_HW		0x1
+#define UART_FLOW_MODE_NONE		0x0 /* no flow control, no address matching */
+#define UART_FLOW_MODE_HW		0x1 /* HW flow control enabled. Auto RTS/CTS or DTR/DSR must be selected by GPIO_MODE.*/
 #define UART_FLOW_MODE_SW		0x2
+#define UART_FLOW_MODE_FULL_DUPLEX      0x0
+#define UART_FLOW_MODE_HALF_DUPLEX      0x8
 
 #define UART_GPIO_MODE_SEL_GPIO  	0x0
 #define UART_GPIO_MODE_SEL_RTS_CTS	0x1
+#define UART_GPIO_MODE_GPIO5_RS485	0x3 /* GPIO5 used for auto RS-485 half-duplex control */
+#define UART_GPIO_MODE_SEL_RS485_TX_HI	0x8
 
 #define XR2280x_FUNC_MGR_OFFSET 	0x40
-
