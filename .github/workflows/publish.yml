@@ -6,9 +6,9 @@ on:
     types: [ submitted ]
   push:
     branches:
-      - "eve-kernel-riscv64-v6.1.38-generic"
+      - "eve-kernel-riscv64-v6.1.106-generic"
 env:
-  branch_name: "refs/heads/eve-kernel-riscv64-v6.1.38-generic"
+  branch_name: "refs/heads/eve-kernel-riscv64-v6.1.106-generic"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,8 +34,8 @@ jobs:
         with:
           username: ${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}
           password: ${{ secrets.RELEASE_DOCKERHUB_TOKEN }}
-      
-      - name: Push eve-kernel-riscv64-v6.1.38-generic if PR approved or pushed
+
+      - name: Push eve-kernel-riscv64-v6.1.106-generic if PR approved or pushed
         if: ${{ github.ref == env.branch_name }}
         run: |
           make -f Makefile.eve BRANCH?=${GITHUB_REF##*/} push-gcc
