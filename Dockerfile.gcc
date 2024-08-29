@@ -86,17 +86,15 @@ ENV SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
 # ensure CONFIG_BPF_KPROBE_OVERRIDE is not set
 RUN ! grep -q -E 'CONFIG_BPF_KPROBE_OVERRIDE=[y|m]' .config || (echo "Cannot set this option for security reasons"; false)
 
+RUN make -j$(nproc) mrproper
+RUN make O=/kernel-out ${KERNEL_CONFIG}
 RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH} \
-    ccache -z && \
-    echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" && \
-    make -j$(nproc) mrproper \
-    && make O=/kernel-out ${KERNEL_CONFIG} \
-    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) prepare \
-    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) \
-    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) modules \
+    ccache -z \
+    && echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" \
+    && make CC="${CROSS_COMPILE}gcc" O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) prepare vmlinux Image.gz modules \
     && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) modules_install INSTALL_MOD_STRIP=1 \
         INSTALL_MOD_PATH=/tmp/kernel-modules \
-    && ccache -s
+    && ccache -s | tee -a /ccache-stats.txt
 
 ADD https://github.com/mikem-zed/zfs.git#eve-zfs-2.1.12 /tmp/zfs
 WORKDIR /tmp/zfs
@@ -113,9 +111,9 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
     ./scripts/make_gitrev.sh
 
 RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
-    make -C module -j$(nproc) && \
+    make CC="${CROSS_COMPILE}gcc" -C module -j$(nproc) && \
     make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
-    ccache -s
+    ccache -s | tee -a /ccache-stats.txt
 
 FROM builder as artifacts
 
