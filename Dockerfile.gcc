@@ -78,10 +78,50 @@ ARG KBUILD_BUILD_TIMESTAMP
 ARG KERNEL_CONFIG
 ARG KERNEL_BIN
 ARG LOCALVERSION
+
 # ARCH and CROSS_COMPILE are inherited from builder-${TARGETARCH}-${BUILDARCH}
 # ARCH is always set to the target arch
 # CROSS_COMPILE is set to empty string for native builds
-COPY . /kernel-src
+RUN mkdir /kernel-src
+COPY COPYING /kernel-src/COPYING
+COPY CREDITS /kernel-src/CREDITS
+COPY Documentation /kernel-src/Documentation
+COPY Kbuild /kernel-src/Kbuild
+COPY Kconfig /kernel-src/Kconfig
+COPY LICENSES /kernel-src/LICENSES
+COPY MAINTAINERS /kernel-src/MAINTAINERS
+COPY Makefile /kernel-src/Makefile
+COPY README /kernel-src/README
+COPY arch /kernel-src/arch
+COPY block /kernel-src/block
+COPY certs /kernel-src/certs
+COPY crypto /kernel-src/crypto
+COPY drivers /kernel-src/drivers
+COPY fs /kernel-src/fs
+COPY include /kernel-src/include
+COPY init /kernel-src/init
+COPY io_uring /kernel-src/io_uring
+COPY ipc /kernel-src/ipc
+COPY kernel /kernel-src/kernel
+COPY lib /kernel-src/lib
+COPY mm /kernel-src/mm
+COPY net /kernel-src/net
+COPY rust /kernel-src/rust
+COPY samples /kernel-src/samples
+COPY scripts /kernel-src/scripts
+COPY security /kernel-src/security
+COPY sound /kernel-src/sound
+COPY tools /kernel-src/tools
+COPY usr /kernel-src/usr
+COPY virt /kernel-src/virt
+# We have to do this as --exclude is not supported by dockerfile-add-scanner
+# and we cannot split this into several Dockerfiles as the docker buildkit
+# cannot reference local images
+# To generate this, I used:
+# ls -1 | perl -ne 'chomp; print "COPY $_ /kernel-src/$_\n";'
+# and then I removed everything that should not be copied into, f.e.:
+# Dockerfile.{gcc,clang}, Makefile{,eve}
+
 WORKDIR /kernel-src
 
 RUN sed -i Makefile -e 's/--build-id=sha1/--build-id=none/g'
@@ -171,12 +211,11 @@ RUN DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdept
          tar cf - -T - | (cd $dir; tar xf -) && \
     ( cd /tmp && tar cf /out/kernel-dev.tar usr/src )
 
-# copy SBOM files
-RUN cp /kernel-src/kernel-sbom-docker.spdx.json /out/ && \
-    cp /kernel-src/kernel-sbom-gh.spdx.json /out/
-
 FROM scratch
 ENTRYPOINT []
 CMD []
 WORKDIR /
+# copy SBOM files
+COPY kernel-sbom-docker.spdx.json /
+COPY kernel-sbom-gh.spdx.json /
 COPY --from=artifacts /out/* /

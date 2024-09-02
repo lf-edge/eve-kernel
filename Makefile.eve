@@ -50,7 +50,7 @@ SBOM_TARGETS=kernel-sbom-gh.spdx.json kernel-sbom-docker.spdx.json
 sbom: $(SBOM_TARGETS)
 
 kernel-sbom-gh.spdx.json: pull-eve-build-tools
-	docker run  -v $(PWD):/in lfedge/eve-build-tools:main github-sbom-generator \
+	docker run  -v $(PWD):/in:ro lfedge/eve-build-tools:main github-sbom-generator \
 			generate --format spdx-json /in/ | jq . > ./kernel-sbom-gh.spdx.json
 
 #if DOCKERFILE is not set, this target will fail
@@ -60,7 +60,7 @@ kernel-sbom-docker.spdx.json: pull-eve-build-tools $(DOCKERFILE)
 		exit 1; \
 	fi
 	@echo "Generating SBOM for $(DOCKERFILE)"
-	docker run -v $(PWD):/in lfedge/eve-build-tools:main dockerfile-add-scanner scan /in/$(DOCKERFILE) \
+	docker run -v $(PWD):/in:ro lfedge/eve-build-tools:main dockerfile-add-scanner scan /in/$(DOCKERFILE) \
 		--format spdx-json | jq . > ./kernel-sbom-docker.spdx.json
 
 kernel-gcc: DOCKERFILE:=Dockerfile.gcc
