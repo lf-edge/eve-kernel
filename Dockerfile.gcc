@@ -1,4 +1,4 @@
-#syntax=docker/dockerfile:1.6
+#syntax=docker/dockerfile:1.9.0-labs
 ARG ALPINE_VERSION=3.16
 ARG KERNEL_CONFIG=eve_defconfig
 ARG KERNEL_BIN=arch/x86/boot/bzImage
@@ -81,7 +81,9 @@ ARG LOCALVERSION
 # ARCH and CROSS_COMPILE are inherited from builder-${TARGETARCH}-${BUILDARCH}
 # ARCH is always set to the target arch
 # CROSS_COMPILE is set to empty string for native builds
-COPY . /kernel-src
+RUN mkdir /kernel-src
+COPY --exclude=kernel-sbom-*.json . /kernel-src
+
 WORKDIR /kernel-src
 
 RUN sed -i Makefile -e 's/--build-id=sha1/--build-id=none/g'
@@ -175,4 +177,7 @@ FROM scratch
 ENTRYPOINT []
 CMD []
 WORKDIR /
+# copy SBOM files
+COPY kernel-sbom-docker.spdx.json /
+COPY kernel-sbom-gh.spdx.json /
 COPY --from=artifacts /out/* /
