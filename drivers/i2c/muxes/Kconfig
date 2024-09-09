@@ -119,16 +119,4 @@ config I2C_MUX_MLXCPLD
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-mux-mlxcpld.
 
-config I2C_MUX_KEMPLD
-	tristate "Kontron COM I2C multiplexer"
-    depends on I2C_KEMPLD
-	help
-	  This enables support for additional I2C ports available on some Kontron
-	  modules. Usually those ports are for board internal usage and not
-	  routed outside the module.
-	  Do not use this option unless you know what you are doing!
-
-	  This driver can also be built as a module. If so, the module will be
-	  called i2c-mux-kempld.
-
 endmenu
