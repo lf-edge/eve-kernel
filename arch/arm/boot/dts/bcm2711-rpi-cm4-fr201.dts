@@ -2,11 +2,20 @@
 
 /* Nodes for OnLogic FR201 device */
 
-/* Power LED */
-&leds {
-	led-pwr {
-		default-state = "off";
-		linux,default-trigger = "none";
+/* LEDs */
+/ {
+	leds {
+		act_led: led-act {
+			default-state = "off";
+			linux,default-trigger = "none";
+			gpios = <&gpio 42 GPIO_ACTIVE_HIGH>;
+		};
+
+		pwr_led: led-pwr {
+			default-state = "off";
+			linux,default-trigger = "default-on";
+			gpios = <&expgpio 2 GPIO_ACTIVE_HIGH>;
+		};
 	};
 };
 
