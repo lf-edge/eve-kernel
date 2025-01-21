@@ -53,6 +53,9 @@
 	brcm,pins = <18 19 20 21>;
 	brcm,function = <0>;
 };
+&spidev1 {
+	status = "disabled";
+};
 
 /* RTC */
 &i2c0if {
