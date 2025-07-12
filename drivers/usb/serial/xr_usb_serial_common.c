@@ -37,6 +37,7 @@
 //#undef DEBUG
 #undef VERBOSE_DEBUG
 
+#include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/init.h>
@@ -51,7 +52,11 @@
 #include <linux/usb.h>
 #include <linux/usb/cdc.h>
 #include <asm/byteorder.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/unaligned.h>
+#else
 #include <asm/unaligned.h>
+#endif
 #include <linux/list.h>
 #include "linux/version.h"
 #include <asm/io.h>
