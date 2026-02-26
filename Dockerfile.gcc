@@ -103,7 +103,7 @@ RUN make -j$(nproc) mrproper
 # Apply RT patches if building RT kernel
 RUN if echo "${KERNEL_CONFIG}" | grep -q "rt_defconfig"; then \
     echo "Applying RT patches for RT kernel build" && \
-    curl -fsSL https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.12/patch-6.12.43-rt12.patch.gz | \
+    curl -fsSL https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.17/older/patch-6.17.1-rt5.patch.gz | \
     gunzip | patch -p1 -N -s; \
 fi
 
@@ -134,7 +134,7 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH}
         INSTALL_MOD_PATH=/tmp/kernel-modules \
     && ccache -s | tee -a /ccache-stats.txt
 
-ADD https://github.com/openzfs/zfs.git#zfs-2.4.0-rc2 /tmp/zfs
+ADD https://github.com/openzfs/zfs.git#zfs-2.3.6 /tmp/zfs
 WORKDIR /tmp/zfs
 
 RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
