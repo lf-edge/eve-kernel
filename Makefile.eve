@@ -190,4 +190,6 @@ push-image-%:
 	    $(IMAGE_TAG_NO_FLAVOR)-$*,)
 .PHONY: clean
 clean:
-	echo "Cleaning"
+	$(LK) cache clean
+	rm -f $(LK)
+	docker kill $(BUILD_KIT_BUILDER)

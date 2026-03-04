@@ -48,3 +48,10 @@ jobs:
                     KERNEL_CONFIG_FLAVOR=${{ matrix.flavor }} \
                     BRANCH=$SAFE_BRANCH \
                     kernel-gcc
+
+            - name: Clean
+              if: always()
+              run: |
+                make -f Makefile.eve clean
+                docker system prune -af
+                docker volume prune -af

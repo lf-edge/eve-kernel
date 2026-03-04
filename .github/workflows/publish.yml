@@ -52,3 +52,10 @@ jobs:
                     KERNEL_CONFIG_FLAVOR=${{ matrix.flavor }} \
                     BRANCH=${{ github.ref_name }} \
                     push-gcc
+
+            - name: Clean
+              if: always()
+              run: |
+                make -f Makefile.eve clean
+                docker system prune -af
+                docker volume prune -af
