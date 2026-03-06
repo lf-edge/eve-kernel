@@ -1,0 +1,132 @@
+# Title: Dockerfile for building the EVE kernel
+
+VERSION=$(shell git rev-parse --short=12 HEAD)
+DIRTY=$(shell git diff --quiet || echo '-dirty')
+EVE_KERNEL_CONFIG=tegra_eveos_defconfig
+EVE_FLAVOR=nvidia-jp7
+ARCHITECTURE=arm64
+KERNEL_TAG=v6.8.12
+PLATFORM=linux/$(ARCHITECTURE)
+BUILD_USER:=$(shell id -un)
+
+IMAGE_REPOSITORY?=lfedge/eve-kernel
+
+HOSTARCH:=$(subst aarch64,arm64,$(subst x86_64,amd64,$(shell uname -m)))
+UNAME_OS_LCASE:=$(shell uname -s | tr '[A-Z]' '[a-z]')
+
+# linuxkit version. This **must** be a published semver version so it can be
+# downloaded already compiled from the release page at
+# https://github.com/linuxkit/linuxkit/releases
+LINUXKIT_VERSION ?= v1.8.1
+LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
+
+# Set LINUXKIT_GIT_URL to build linuxkit from a pinned commit instead of
+# downloading a release binary.  LINUXKIT_GIT_REF must be a commit hash
+# (reproducible, no network call at parse time).
+# Update the hash by running: git ls-remote https://github.com/linuxkit/linuxkit master
+# Leave LINUXKIT_GIT_URL unset (default) to use the release binary.
+LINUXKIT_GIT_URL ?= https://github.com/linuxkit/linuxkit
+LINUXKIT_GIT_REF ?= 3bf33c3a11fc20b459195294a7d8980cbca4195b
+
+ifneq ($(LINUXKIT_GIT_URL),)
+_LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
+LK := /tmp/linuxkit-$(_LK_VERSION)
+else
+LK := /tmp/linuxkit-$(LINUXKIT_VERSION)
+endif
+
+SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
+BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
+# make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
+KBUILD_BUILD_TIMESTAMP=$(shell git log -1 --format=%cd | cut -f1 -d"+")
+
+ifeq ($(BUILDKIT_PROGRESS),)
+    export BUILDKIT_PROGRESS := plain
+endif
+
+# if BRANCH is defined on a command line we are running under CI
+# we add user name to DIRTY to avoid docker tag conflicts
+# when building on a shared machine with shared docker cache
+ifeq ($(origin BRANCH), file)
+	DIRTY:=-$(BUILD_USER)$(DIRTY)
+endif
+
+.PHONY: all help
+
+all: kernel-gcc
+
+help: Makefile
+	@echo
+	@echo "Makefile to build EVE kernel"
+	@echo "Usage: make [target]"
+	@echo "Targets:"
+	@echo "  kernel-gcc: build kernel with gcc"
+	@echo "  docker-tag-gcc: print docker tag for gcc kernel"
+	@echo "  push-gcc: push gcc kernel to docker.io"
+	@echo "  clean: remove generated files"
+	@echo
+
+.PHONY: linuxkit
+linuxkit: $(LK)
+
+ifneq ($(LINUXKIT_GIT_URL),)
+# ── Case 1: build from pinned commit ─────────────────────────────────────────
+# The hash is used as the binary name — make skips the recipe if already built.
+$(LK):
+	@echo "Building linuxkit from $(LINUXKIT_GIT_URL) at $(LINUXKIT_GIT_REF)"
+	@tmp=$$(mktemp -d) && \
+	  git clone --filter=blob:none $(LINUXKIT_GIT_URL) $$tmp && \
+	  git -C $$tmp checkout $(LINUXKIT_GIT_REF) && \
+	  $(MAKE) -C $$tmp local-build LOCAL_TARGET=$(abspath $@) && \
+	  rm -rf $$tmp
+else
+# ── Case 2: download upstream release binary ──────────────────────────────────
+$(LK):
+	@echo "Downloading linuxkit release $(LINUXKIT_VERSION)"
+	curl -fsSL -o $@ $(LINUXKIT_SOURCE)/releases/download/$(LINUXKIT_VERSION)/linuxkit-$(UNAME_OS_LCASE)-$(HOSTARCH) && chmod +x $@
+endif
+
+IMAGE_TAG := $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)
+
+KERNEL_BUILD_ARGS_FILE := $(shell mktemp -u)-kernel-build-args
+
+kernel-build-%: Makefile.eve $(LK)
+	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
+	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nKERNEL_CONFIG=%s\n' \
+	  '$(SOURCE_DATE_EPOCH)' '$(KBUILD_BUILD_TIMESTAMP)' \
+	  '$(VERSION)$(DIRTY)' '$(EVE_KERNEL_CONFIG)' \
+	  > $(KERNEL_BUILD_ARGS_FILE)
+	$(LK) pkg build \
+	  --force \
+	  --dockerfile Dockerfile.$* \
+	  --platforms linux/$(ARCHITECTURE) \
+	  --tag $(BRANCH)-$(VERSION)$(DIRTY)-$* \
+	  --build-arg-file $(KERNEL_BUILD_ARGS_FILE) \
+	  .
+	@rm -f $(KERNEL_BUILD_ARGS_FILE)
+
+
+# we need these intermediate targets to make .PHONY work for pattern rules
+kernel-gcc: kernel-build-gcc
+docker-tag-gcc: docker-tag-generate-gcc
+push-gcc: push-image-gcc
+
+clean-gcc: clean-image-gcc
+
+.PHONY: kernel-gcc docker-tag-gcc push-gcc clean-gcc
+
+docker-tag-generate-%:
+	@echo "docker.io/$(IMAGE_TAG)-$*"
+
+push-image-%:
+	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
+	$(LK) cache push $(IMAGE_TAG)-$*
+clean-image-%:
+	$(LK) cache rm $(IMAGE_TAG)-$* 2>/dev/null || true
+	docker rmi $(IMAGE_TAG)-$* 2>/dev/null || true
+
+.PHONY: clean
+clean:
+	$(LK) cache clean
+	rm -f $(LK)
+	docker kill $(BUILD_KIT_BUILDER)

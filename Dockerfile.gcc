@@ -1,0 +1,221 @@
+#syntax=docker/dockerfile:1.6
+ARG ALPINE_VERSION=3.16
+ARG KERNEL_CONFIG=tegra_eveos_defconfig
+ARG KERNEL_BIN=arch/arm64/boot/Image
+# set from a Makefile.eve
+ARG SOURCE_DATE_EPOCH
+ARG KBUILD_BUILD_TIMESTAMP
+ARG LOCALVERSION
+
+FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
+RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
+    automake \
+    autoconf \
+    bash \
+    coreutils \
+    libtool \
+    util-linux-dev \
+    libtirpc-dev \
+    libaio-dev \
+    python3 \
+    py3-sphinx \
+    openssl \
+    linux-headers \
+    rsync \
+    xxd \
+    tar \
+    xz \
+    kmod
+
+ARG TARGETARCH
+ARG BUILDPLATFORM
+ARG BUILDARCH
+
+# for host tools and native builds
+ENV CC="ccache gcc"
+ENV ARCH=
+# set CROSS_COMPILE to empty string to build native kernel
+ENV CROSS_COMPILE=
+
+FROM --platform=${BUILDPLATFORM} lfedge/eve-cross-compilers:2a1d062fce410865e7024a83de327a68e52db26c AS cross-compilers
+
+FROM builder-native-base as builder-cross-base
+COPY --from=cross-compilers /packages /packages
+
+FROM builder-cross-base as builder-target-arm64
+ARG COMPILER_TARGET_ARCH=aarch64
+ENV ARCH=arm64
+ENV CROSS_COMPILE="ccache aarch64-alpine-linux-musl-"
+
+FROM builder-cross-base as builder-target-amd64
+ARG COMPILER_TARGET_ARCH=x86_64
+ENV ARCH=x86_64
+ENV CROSS_COMPILE="ccache x86_64-alpine-linux-musl-"
+
+FROM builder-target-${TARGETARCH} as builder-target
+# install cross compiler
+RUN apk add --no-cache --allow-untrusted -X /packages build-base-${COMPILER_TARGET_ARCH}
+# and necessary target libraries e.g musl-dev and libgcc for cross-compiler
+# TODO: it seems we do not really need this.
+# RUN mkdir -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk && \
+#     cp /etc/apk/repositories /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk/ && \
+#     cp /etc/resolv.conf /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/ && \
+#     apk add -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl --initdb -U \
+#         --arch ${COMPILER_TARGET_ARCH} --allow-untrusted musl-dev libgcc
+
+FROM builder-target as builder-amd64-arm64
+ENV ZFS_CONFIGURE_TARGETS="--build=aarch64-alpine-linux-musl --host=x86_64-alpine-linux-musl"
+
+FROM builder-target as builder-arm64-amd64
+ENV ZFS_CONFIGURE_TARGETS="--host=aarch64-alpine-linux-musl --build=x86_64-alpine-linux-musl"
+
+FROM builder-native-base as builder-amd64-amd64
+ENV ZFS_CONFIGURE_TARGETS=
+ENV ARCH=x86_64
+
+FROM builder-native-base as builder-arm64-arm64
+ENV ZFS_CONFIGURE_TARGETS=
+ENV ARCH=arm64
+
+FROM builder-${TARGETARCH}-${BUILDARCH} as builder
+# make ARGs visible
+ARG SOURCE_DATE_EPOCH
+ARG KBUILD_BUILD_TIMESTAMP
+ARG KERNEL_CONFIG
+ARG KERNEL_BIN
+ARG LOCALVERSION
+# ARCH and CROSS_COMPILE are inherited from builder-${TARGETARCH}-${BUILDARCH}
+# ARCH is always set to the target arch
+# CROSS_COMPILE is set to empty string for native builds
+COPY . /kernel-src
+WORKDIR /kernel-src/kernel/kernel-noble
+
+RUN sed -i Makefile -e 's/--build-id=sha1/--build-id=none/g'
+
+# setup reproducible build
+ENV KBUILD_BUILD_USER="eve"
+ENV KBUILD_BUILD_HOST="eve"
+ENV KCONFIG_NOTIMESTAMP="true"
+ENV KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP}"
+ENV SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
+
+WORKDIR /kernel-src/kernel/kernel-noble
+RUN mkdir -p /tmp/kernel-modules/boot /tmp/kernel-modules/lib/modules
+RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH} \
+    ccache -z \
+    && echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" \
+    && CC="${CROSS_COMPILE}gcc" \
+    && make -j "$(getconf _NPROCESSORS_ONLN)" ${KERNEL_CONFIG} \
+    && make -j "$(getconf _NPROCESSORS_ONLN)" \
+        LOCALVERSION="-${LOCALVERSION}" prepare Image modules dtbs \
+    && make -j "$(getconf _NPROCESSORS_ONLN)" \
+        LOCALVERSION="-${LOCALVERSION}" \
+        INSTALL_MOD_STRIP=1 \
+        INSTALL_MOD_PATH=/tmp/kernel-modules modules_install \
+    && ccache -s | tee -a /ccache-stats.txt
+
+# Build and install other NVIDIA drivers
+WORKDIR /kernel-src
+RUN --mount=type=cache,target=/root/.cache/ccache,id=nvmodules-ccache-${TARGETARCH} \
+    ccache -z \
+    && echo "Building NVIDIA modules for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" \
+    && CC="${CROSS_COMPILE}gcc" \
+    && make -j "$(getconf _NPROCESSORS_ONLN)" \
+        CROSS_COMPILE="${CROSS_COMPILE}" \
+        KERNEL_HEADERS="/kernel-src/kernel/kernel-noble" \
+        NV_OOT_IVC_EXT_SKIP_BUILD=y \
+        CONFIG_EVEOS=y \
+        modules \
+    && CROSS_COMPILE_STRIP=$("${CROSS_COMPILE}strip" | awk '{print $NF}') \
+        find out/ -name "*.ko" -exec "${CROSS_COMPILE_STRIP}" {} \; \
+    && make -j1 \
+        CROSS_COMPILE="${CROSS_COMPILE}" \
+        KERNEL_HEADERS="/kernel-src/kernel/kernel-noble" \
+        NV_OOT_IVC_EXT_SKIP_BUILD=y \
+        CONFIG_EVEOS=y \
+        INSTALL_MOD_PATH="/tmp/kernel-modules" modules_install \
+    && make \
+        CROSS_COMPILE="${CROSS_COMPILE}" \
+        KERNEL_HEADERS="/kernel-src/kernel/kernel-noble" \
+        NV_OOT_IVC_EXT_SKIP_BUILD=y \
+        CONFIG_EVEOS=y \
+        dtbs
+
+# Install NVIDIA's DTBs
+# DTBs from out-of-tree modules will have priority (if the same file exist in kernel sources)
+RUN if [ "${TARGETARCH}" = arm64 ]; then \
+       mkdir -p /tmp/kernel-modules/boot/dtb/nvidia && \
+       for dtb in kernel-devicetree/generic-dts/dtbs/*.dtb; do \
+           cp $dtb /tmp/kernel-modules/boot/dtb/nvidia/ ;\
+       done; \
+       cp nvidia-oot/drivers/misc/mods/mods.dtb /tmp/kernel-modules/boot/dtb/nvidia/ ;\
+    fi
+
+# ZFS
+ADD https://github.com/openzfs/zfs.git#zfs-2.3.6 /tmp/zfs
+WORKDIR /tmp/zfs
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
+    ./autogen.sh && \
+    echo "Building ZFS for ${TARGETARCH} with ARCH=${ARCH}, CROSS_COMPILE=${CROSS_COMPILE} and ZFS_CONFIGURE_TARGETS=${ZFS_CONFIGURE_TARGETS}" && \
+    ./configure -v \
+    --with-linux=/kernel-src/kernel/kernel-noble \
+    --with-config=kernel \
+    ${ZFS_CONFIGURE_TARGETS} && \
+    ./scripts/make_gitrev.sh
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
+    make CC="${CROSS_COMPILE}gcc" -j "$(getconf _NPROCESSORS_ONLN)" -C module && \
+    make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
+    ccache -s | tee -a /ccache-stats.txt
+
+FROM builder as artifacts
+
+WORKDIR /kernel-src/kernel/kernel-noble
+
+# package artifacts
+RUN mkdir /out && \
+    cp ${KERNEL_BIN} /out/kernel && \
+    cp System.map /out && \
+    DVER=$(make kernelrelease) && \
+    DIR=linux-debug-$DVER && \
+    rsync -rv --include '*/' --include '*.dwo' --exclude '*' --prune-empty-dirs . /tmp/$DIR && \
+    cp vmlinux /tmp/$DIR && \
+    tar -cf /out/kernel-debug.tar -C /tmp $DIR
+
+# copy build time generated module-signing public key, used for diffing builds
+RUN DVER=$(basename "$(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)"); \
+    if [ -f "/kernel-src/kernel/kernel-noble/certs/signing_key.x509" ]; then \
+        cp /kernel-src/kernel/kernel-noble/certs/signing_key.x509 "/tmp/kernel-modules/lib/modules/$DVER"; \
+    fi
+
+# Package all the modules up
+RUN ( DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)) && \
+      cd /tmp/kernel-modules/lib/modules/$DVER && \
+      ln -s /usr/src/linux-headers-$DVER build ) && \
+    ( cd /tmp/kernel-modules && tar cf /out/kernel.tar . )
+
+# Headers (userspace API)
+RUN mkdir -p /tmp/kernel-headers/usr && \
+    make INSTALL_HDR_PATH=/tmp/kernel-headers/usr headers_install && \
+    ( cd /tmp/kernel-headers && tar cf /out/kernel-headers.tar usr )
+
+# Headers (kernel development)
+RUN DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)) && \
+    dir=/tmp/usr/src/linux-headers-$DVER && \
+    mkdir -p $dir && \
+    cp .config $dir && \
+    cp Module.symvers $dir && \
+    find . -path './include/*' -prune -o \
+           -path './arch/*/include' -prune -o \
+           -path './scripts/*' -prune -o \
+           -type f \( -name 'Makefile*' -o -name 'Kconfig*' -o -name 'Kbuild*' -o \
+                      -name '*.lds' -o -name '*.pl' -o -name '*.sh' \) | \
+         tar cf - -T - | (cd $dir; tar xf -) && \
+    ( cd /tmp && tar cf /out/kernel-dev.tar usr/src )
+
+FROM scratch
+ENTRYPOINT []
+CMD []
+WORKDIR /
+COPY --from=artifacts /out/* /
