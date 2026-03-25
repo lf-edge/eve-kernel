@@ -87,18 +87,22 @@ $(LK):
 	curl -fsSL -o $@ $(LINUXKIT_SOURCE)/releases/download/$(LINUXKIT_VERSION)/linuxkit-$(UNAME_OS_LCASE)-$(HOSTARCH) && chmod +x $@
 endif
 
-KERNEL_OCI_FILE:=$(shell mktemp -u)-kernel.tar
+KERNEL_BUILD_ARGS_FILE := $(shell mktemp -u)-kernel-build-args
 
 kernel-build-%: Makefile.eve $(LK)
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
-	docker buildx build \
-	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
-	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
-	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
-	--platform $(PLATFORM) -t $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$* \
-	--sbom=true --output=type=oci,dest=$(KERNEL_OCI_FILE) -f Dockerfile.$* .
-	$(LK) cache import $(KERNEL_OCI_FILE)
-	rm -f $(KERNEL_OCI_FILE)
+	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\n' \
+	  '$(SOURCE_DATE_EPOCH)' '$(KBUILD_BUILD_TIMESTAMP)' \
+	  '$(VERSION)$(DIRTY)' \
+	  > $(KERNEL_BUILD_ARGS_FILE)
+	$(LK) pkg build \
+	  --force \
+	  --dockerfile Dockerfile.$* \
+	  --platforms linux/$(ARCHITECTURE) \
+	  --tag $(BRANCH)-$(VERSION)$(DIRTY)-$* \
+	  --build-arg-file $(KERNEL_BUILD_ARGS_FILE) \
+	  .
+	@rm -f $(KERNEL_BUILD_ARGS_FILE)
 
 
 # we need these intermediate targets to make .PHONY work for pattern rules
