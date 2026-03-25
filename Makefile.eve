@@ -9,12 +9,29 @@ BUILD_USER:=$(shell id -un)
 
 IMAGE_REPOSITORY?=lfedge/eve-kernel
 
-LINUXKIT_VERSION=58c36c9eb0c32acf66ae7877d18a9ad24d59d73e
-GOBIN=/tmp/linuxkit-$(LINUXKIT_VERSION)
-LK=$(GOBIN)/linuxkit
+HOSTARCH:=$(subst aarch64,arm64,$(subst x86_64,amd64,$(shell uname -m)))
+UNAME_OS_LCASE:=$(shell uname -s | tr '[A-Z]' '[a-z]')
 
-BUILD_KIT_VERSION=v0.12.5
-BUILD_KIT_BUILDER=eve-kernel-builder-$(BUILD_KIT_VERSION)
+# linuxkit version. This **must** be a published semver version so it can be
+# downloaded already compiled from the release page at
+# https://github.com/linuxkit/linuxkit/releases
+LINUXKIT_VERSION ?= v1.7.0
+LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
+
+# Set LINUXKIT_GIT_URL to build linuxkit from a pinned commit instead of
+# downloading a release binary.  LINUXKIT_GIT_REF must be a commit hash
+# (reproducible, no network call at parse time).
+# Update the hash by running: git ls-remote https://github.com/linuxkit/linuxkit master
+# Leave LINUXKIT_GIT_URL unset (default) to use the release binary.
+LINUXKIT_GIT_URL ?=
+LINUXKIT_GIT_REF ?=
+
+ifneq ($(LINUXKIT_GIT_URL),)
+_LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
+LK := /tmp/linuxkit-$(_LK_VERSION)
+else
+LK := /tmp/linuxkit-$(LINUXKIT_VERSION)
+endif
 
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
 BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
@@ -50,23 +67,31 @@ help: Makefile
 	@echo "  clean: remove generated files"
 	@echo
 
-.PHONY: ensure-builder
-ensure-builder:
-	docker buildx inspect $(BUILD_KIT_BUILDER) 2>/dev/null || \
-	docker buildx create --name $(BUILD_KIT_BUILDER) \
-	--driver docker-container --bootstrap --driver-opt=image=moby/buildkit:$(BUILD_KIT_VERSION)
-
 .PHONY: linuxkit
 linuxkit: $(LK)
+
+ifneq ($(LINUXKIT_GIT_URL),)
+# ── Case 1: build from pinned commit ─────────────────────────────────────────
+# The hash is used as the binary name — make skips the recipe if already built.
 $(LK):
-	GOBIN=$(GOBIN) go install github.com/linuxkit/linuxkit/src/cmd/linuxkit@$(LINUXKIT_VERSION)
+	@echo "Building linuxkit from $(LINUXKIT_GIT_URL) at $(LINUXKIT_GIT_REF)"
+	@tmp=$$(mktemp -d) && \
+	  git clone --filter=blob:none $(LINUXKIT_GIT_URL) $$tmp && \
+	  git -C $$tmp checkout $(LINUXKIT_GIT_REF) && \
+	  $(MAKE) -C $$tmp local-build LOCAL_TARGET=$(abspath $@) && \
+	  rm -rf $$tmp
+else
+# ── Case 2: download upstream release binary ──────────────────────────────────
+$(LK):
+	@echo "Downloading linuxkit release $(LINUXKIT_VERSION)"
+	curl -fsSL -o $@ $(LINUXKIT_SOURCE)/releases/download/$(LINUXKIT_VERSION)/linuxkit-$(UNAME_OS_LCASE)-$(HOSTARCH) && chmod +x $@
+endif
 
 KERNEL_OCI_FILE:=$(shell mktemp -u)-kernel.tar
 
-kernel-build-%: Makefile.eve linuxkit | ensure-builder
+kernel-build-%: Makefile.eve $(LK)
 	@echo "Building kernel version $(BRANCH):$(VERSION)-$* with compiler $*"
 	docker buildx build \
-	--builder=$(BUILD_KIT_BUILDER) \
 	--build-arg="SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)" \
 	--build-arg="KBUILD_BUILD_TIMESTAMP=$(KBUILD_BUILD_TIMESTAMP)" \
 	--build-arg="LOCALVERSION=$(VERSION)$(DIRTY)" \
