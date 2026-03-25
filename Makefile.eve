@@ -15,7 +15,7 @@ UNAME_OS_LCASE:=$(shell uname -s | tr '[A-Z]' '[a-z]')
 # linuxkit version. This **must** be a published semver version so it can be
 # downloaded already compiled from the release page at
 # https://github.com/linuxkit/linuxkit/releases
-LINUXKIT_VERSION ?= v1.7.0
+LINUXKIT_VERSION ?= v1.8.1
 LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
 
 # Set LINUXKIT_GIT_URL to build linuxkit from a pinned commit instead of
@@ -23,8 +23,8 @@ LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
 # (reproducible, no network call at parse time).
 # Update the hash by running: git ls-remote https://github.com/linuxkit/linuxkit master
 # Leave LINUXKIT_GIT_URL unset (default) to use the release binary.
-LINUXKIT_GIT_URL ?=
-LINUXKIT_GIT_REF ?=
+LINUXKIT_GIT_URL ?= https://github.com/linuxkit/linuxkit
+LINUXKIT_GIT_REF ?= 3bf33c3a11fc20b459195294a7d8980cbca4195b
 
 ifneq ($(LINUXKIT_GIT_URL),)
 _LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
