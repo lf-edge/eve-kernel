@@ -202,7 +202,10 @@ docker-tag-clang: docker-tag-generate-clang
 push-gcc: push-image-gcc
 push-clang: push-image-clang
 
-.PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang
+clean-gcc: clean-image-gcc
+clean-clang: clean-image-clang
+
+.PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang clean-gcc clean-clang
 
 docker-tag-generate-%:
 	@echo "docker.io/$(IMAGE_TAG_WITH_FLAVOR)-$*"
@@ -214,6 +217,10 @@ push-image-%:
 	  $(LK) pkg remote-tag \
 	    $(IMAGE_TAG_WITH_FLAVOR)-$* \
 	    $(IMAGE_TAG_NO_FLAVOR)-$*,)
+clean-image-%:
+	$(LK) cache rm $(IMAGE_TAG_WITH_FLAVOR)-$* 2>/dev/null || true
+	docker rmi docker.io/$(IMAGE_TAG_WITH_FLAVOR)-$* 2>/dev/null || true
+
 .PHONY: clean
 clean:
 	$(LK) cache clean
