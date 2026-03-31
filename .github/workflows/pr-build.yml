@@ -1,12 +1,14 @@
-name: Building and pushing Eve kernel images
+name: PR Build
 
-on:
-    push:
+on: # yamllint disable-line rule:truthy
+    pull_request:
         branches:
             - "eve-kernel-riscv64-v6.1.112-generic"
+        paths-ignore:
+            - ".github/**"
 
 concurrency:
-    group: main-build-${{ github.ref }}
+    group: pr-build-${{ github.event.pull_request.number }}
     cancel-in-progress: true
 
 jobs:
@@ -14,41 +16,30 @@ jobs:
         runs-on: [runner-xl, Linux]
 
         steps:
-            - name: Checkout code
+            - name: Set sanitized branch name
+              id: branch-setter
+              run: |
+                  BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+                  SAFE_BRANCH="${BRANCH_NAME//\//-}"
+                  echo "SAFE_BRANCH=$SAFE_BRANCH" >> $GITHUB_ENV
+            - name: Checkout PR code
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
               with:
-                  ref: ${{ github.ref }}
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  repository: ${{ github.event.pull_request.head.repo.full_name }}
                   fetch-depth: 1
 
-            - name: Login to Docker Hub (pull)
-              uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-              with:
-                  username: ${{ secrets.DOCKERHUB_PULL_USER }}
-                  password: ${{ secrets.DOCKERHUB_PULL_TOKEN }}
-
-            - name: Build kernel from ${{ github.ref_name }}
+            - name: Build kernel
               run: |
                   make -f Makefile.eve \
-                    BRANCH=${{ github.ref_name }} \
+                    BRANCH=$SAFE_BRANCH \
                     kernel-gcc
-
-            - name: Login to Docker Hub (push)
-              uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
-              with:
-                  username: ${{ secrets.RELEASE_DOCKERHUB_ACCOUNT }}
-                  password: ${{ secrets.RELEASE_DOCKERHUB_TOKEN }}
-
-            - name: Push from ${{ github.ref_name }}
-              run: |
-                  make -f Makefile.eve \
-                    BRANCH=${{ github.ref_name }} \
-                    push-gcc
 
             - name: Clean
               if: always()
               run: |
                   make -f Makefile.eve \
-                    BRANCH=${{ github.ref_name }} \
+                    BRANCH=$SAFE_BRANCH \
                     clean-gcc
                   if docker ps -q -f name=linuxkit-builder | grep -q .; then
                       echo "=== BuildKit disk usage before prune ==="
