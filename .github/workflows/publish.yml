@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
     build:
-        runs-on: self-hosted
+        runs-on: [runner-xl, Linux]
 
         steps:
             - name: Checkout code
