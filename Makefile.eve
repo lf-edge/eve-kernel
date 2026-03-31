@@ -112,8 +112,10 @@ docker-tag-gcc: docker-tag-generate-gcc
 docker-tag-clang: docker-tag-generate-clang
 push-gcc: push-image-gcc
 push-clang: push-image-clang
+clean-gcc: clean-image-gcc
+clean-clang: clean-image-clang
 
-.PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang
+.PHONY: kernel-gcc kernel-clang docker-tag-gcc docker-tag-clang push-gcc push-clang clean-gcc clean-clang
 
 docker-tag-generate-%:
 	@echo "docker.io/$(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$*"
@@ -122,6 +124,10 @@ push-image-%:
 	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
 	$(LK) cache push $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)-$*
 
+clean-image-%:
+	$(LK) cache rm $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$* 2>/dev/null || true
+	docker rmi $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)-$* 2>/dev/null || true
+
 .PHONY: clean
 clean:
-	echo "Cleaning"
+	$(LK) cache clean
