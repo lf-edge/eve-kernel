@@ -3554,7 +3554,6 @@ static const struct clk_rcg_dfs_data gcc_dfs_clocks[] = {
 	DEFINE_RCG_DFS(gcc_qupv3_wrap0_s7_clk_src),
 	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s0_clk_src),
 	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s1_clk_src),
-	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s2_clk_src),
 	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s3_clk_src),
 	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s4_clk_src),
 	DEFINE_RCG_DFS(gcc_qupv3_wrap1_s5_clk_src),
