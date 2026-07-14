@@ -17,7 +17,7 @@ HOSTARCH:=$(subst aarch64,arm64,$(subst x86_64,amd64,$(shell uname -m)))
 UNAME_OS_LCASE:=$(shell uname -s | tr '[A-Z]' '[a-z]')
 LINUXKIT_VERSION=v1.7.0
 LINUXKIT_SOURCE=https://github.com/linuxkit/linuxkit
-LK=/tmp/linuxkit-$(LINUXKIT_VERSION)
+LK=/tmp/linuxkit-$(LINUXKIT_VERSION)-$(USER)
 
 BUILD_KIT_VERSION=v0.23.1
 BUILD_KIT_BUILDER=eve-kernel-builder-$(BUILD_KIT_VERSION)
