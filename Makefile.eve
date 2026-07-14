@@ -32,9 +32,9 @@ LINUXKIT_GIT_REF ?= 3bf33c3a11fc20b459195294a7d8980cbca4195b
 
 ifneq ($(LINUXKIT_GIT_URL),)
 _LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
-LK := /tmp/linuxkit-$(_LK_VERSION)
+LK := /tmp/linuxkit-$(_LK_VERSION)-$(USER)
 else
-LK := /tmp/linuxkit-$(LINUXKIT_VERSION)
+LK := /tmp/linuxkit-$(LINUXKIT_VERSION)-$(USER)
 endif
 
 SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
