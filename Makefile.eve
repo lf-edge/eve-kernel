@@ -10,7 +10,7 @@ BUILD_USER:=$(shell id -un)
 IMAGE_REPOSITORY?=lfedge/eve-kernel
 
 LINUXKIT_VERSION=58c36c9eb0c32acf66ae7877d18a9ad24d59d73e
-GOBIN=/tmp/linuxkit-$(LINUXKIT_VERSION)
+GOBIN=/tmp/linuxkit-$(LINUXKIT_VERSION)-$(USER)
 LK=$(GOBIN)/linuxkit
 
 BUILD_KIT_VERSION=v0.12.5
