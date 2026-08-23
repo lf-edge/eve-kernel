@@ -1,0 +1,338 @@
+#syntax=docker/dockerfile:1.6
+ARG ALPINE_VERSION=3.22
+ARG BASE_DEFCONFIG=eve-hwe_defconfig
+ARG KERNEL_FRAGMENTS=
+ARG APPLY_RT_PATCH=
+ARG RT_PATCH_URL=
+ARG KERNEL_FLAVOUR=hwe
+ARG KERNEL_BIN=arch/x86/boot/bzImage
+# set from a Makefile.eve
+ARG SOURCE_DATE_EPOCH
+ARG KBUILD_BUILD_TIMESTAMP
+ARG LOCALVERSION
+
+FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
+RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
+    binutils \
+    automake \
+    autoconf \
+    libtool \
+    util-linux-dev \
+    libtirpc-dev \
+    libaio-dev \
+    pahole \
+    python3 \
+    openssl \
+    linux-headers \
+    rsync \
+    tar \
+    xz \
+    zstd \
+    curl \
+    patch
+
+ARG TARGETARCH
+ARG BUILDPLATFORM
+ARG BUILDARCH
+
+# for host tools and native builds
+ENV CC="ccache gcc"
+ENV ARCH=
+# Native builds: CROSS_COMPILE carries only the ccache prefix, so kbuild derives
+# CC = $(CROSS_COMPILE)gcc = "ccache gcc". The cross stages below override this with
+# "ccache <triple>-". Never pass CC= on a make command line: that overrides the
+# CROSS_COMPILE-derived compiler and would silently build with the HOST gcc on a
+# cross stage. ccache passes through harmlessly for the binutils tools kbuild also
+# derives from CROSS_COMPILE (ld, ar, nm, objcopy, objdump, readelf, strip).
+ENV CROSS_COMPILE="ccache "
+
+FROM --platform=${BUILDPLATFORM} lfedge/eve-cross-compilers:2a1d062fce410865e7024a83de327a68e52db26c AS cross-compilers
+
+FROM builder-native-base as builder-cross-base
+COPY --from=cross-compilers /packages /packages
+
+FROM builder-cross-base as builder-target-arm64
+ARG COMPILER_TARGET_ARCH=aarch64
+ENV ARCH=arm64
+ENV CROSS_COMPILE="ccache aarch64-alpine-linux-musl-"
+
+FROM builder-cross-base as builder-target-amd64
+ARG COMPILER_TARGET_ARCH=x86_64
+ENV ARCH=x86_64
+ENV CROSS_COMPILE="ccache x86_64-alpine-linux-musl-"
+
+FROM builder-target-${TARGETARCH} as builder-target
+# install cross compiler
+RUN apk add --no-cache --allow-untrusted -X /packages build-base-${COMPILER_TARGET_ARCH}
+# and necessary target libraries e.g musl-dev and libgcc for cross-compiler
+# TODO: it seems we do not really need this.
+# RUN mkdir -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk && \
+#     cp /etc/apk/repositories /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/apk/ && \
+#     cp /etc/resolv.conf /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl/etc/ && \
+#     apk add -p /usr/${COMPILER_TARGET_ARCH}-alpine-linux-musl --initdb -U \
+#         --arch ${COMPILER_TARGET_ARCH} --allow-untrusted musl-dev libgcc
+
+FROM builder-target as builder-amd64-arm64
+ENV ZFS_CONFIGURE_TARGETS="--build=aarch64-alpine-linux-musl --host=x86_64-alpine-linux-musl"
+
+FROM builder-target as builder-arm64-amd64
+ENV ZFS_CONFIGURE_TARGETS="--host=aarch64-alpine-linux-musl --build=x86_64-alpine-linux-musl"
+
+FROM builder-native-base as builder-amd64-amd64
+ENV ZFS_CONFIGURE_TARGETS=
+ENV ARCH=x86_64
+
+FROM builder-native-base as builder-arm64-arm64
+ENV ZFS_CONFIGURE_TARGETS=
+ENV ARCH=arm64
+
+FROM builder-${TARGETARCH}-${BUILDARCH} as builder
+# make ARGs visible
+ARG SOURCE_DATE_EPOCH
+ARG KBUILD_BUILD_TIMESTAMP
+ARG BASE_DEFCONFIG
+ARG KERNEL_FRAGMENTS
+ARG APPLY_RT_PATCH
+ARG RT_PATCH_URL
+ARG KERNEL_FLAVOUR
+ARG KERNEL_BIN
+ARG LOCALVERSION
+# ARCH and CROSS_COMPILE are inherited from builder-${TARGETARCH}-${BUILDARCH}
+# ARCH is always set to the target arch
+# CROSS_COMPILE is set to empty string for native builds
+COPY . /kernel-src
+WORKDIR /kernel-src
+
+RUN sed -i Makefile -e 's/--build-id=sha1/--build-id=none/g'
+
+# setup reproducible build
+ENV KBUILD_BUILD_USER="eve"
+ENV KBUILD_BUILD_HOST="eve"
+ENV KCONFIG_NOTIMESTAMP="true"
+ENV KBUILD_BUILD_TIMESTAMP="${KBUILD_BUILD_TIMESTAMP}"
+ENV SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
+
+RUN make -j$(nproc) mrproper
+
+# Apply the RT patch when the flavour calls for it. The URL comes from
+# Makefile.eve so there is one place it is stated - this file previously
+# hardcoded patch-6.12.43-rt12 while Makefile.eve said 6.12.49-rt13.
+RUN if [ "${APPLY_RT_PATCH}" = "1" ]; then \
+      echo "Applying RT patch: ${RT_PATCH_URL}"; \
+      curl -fsSL "${RT_PATCH_URL}" | gunzip | patch -p1 -N -s; \
+    fi
+
+# Materialize .config: base defconfig, then each fragment in order.
+# No -Q on merge_config.sh: it sets WARNOVERRIDE=true and silences
+# "Value of $CFG is redefined by fragment", which is the diagnostic that
+# matters once more than one fragment is applied.
+RUN set -e; \
+    echo "Config: base=${BASE_DEFCONFIG} fragments='${KERNEL_FRAGMENTS}'"; \
+    make O=/kernel-out ${BASE_DEFCONFIG}; \
+    for f in ${KERNEL_FRAGMENTS}; do \
+      test -s "$f" || { echo "ERROR: missing or empty fragment $f"; exit 1; }; \
+      echo "Merging $f"; \
+      KCONFIG_CONFIG=/kernel-out/.config scripts/kconfig/merge_config.sh -m \
+        /kernel-out/.config "$f"; \
+    done; \
+    make -s O=/kernel-out olddefconfig
+
+# Policy checks run here, inside the build container and before the compile:
+# every dependency is already installed (python3 at Dockerfile.gcc:20), a
+# local build hits the same gate as a PR, and a violation fails in seconds
+# rather than after a full kernel build.
+#
+# --advisory-parity until the behavioural triage completes; see
+# eve/policy/behavioural-divergence.
+RUN python3 eve/check-config.py \
+      --tree-root . \
+      --config /kernel-out/.config \
+      --flavour "${KERNEL_FLAVOUR}" \
+      $(for f in ${KERNEL_FRAGMENTS}; do echo --fragment "$f"; done) \
+      --core-defconfig arch/x86/configs/eve-core_defconfig \
+      --advisory-parity
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=kernel-ccache-${TARGETARCH} \
+    ccache -z \
+    && echo "Building kernel for ${TARGETARCH} with ARCH=${ARCH} and CROSS_COMPILE=${CROSS_COMPILE}" \
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) prepare bzImage modules \
+    && make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" -j$(nproc) modules_install INSTALL_MOD_STRIP=1 \
+        INSTALL_MOD_PATH=/tmp/kernel-modules \
+    && ccache -s | tee -a /ccache-stats.txt
+
+ADD https://github.com/openzfs/zfs.git#zfs-2.3.7 /tmp/zfs
+WORKDIR /tmp/zfs
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
+    ./autogen.sh && \
+    echo "Building ZFS for ${TARGETARCH} with ARCH=${ARCH}, CROSS_COMPILE=${CROSS_COMPILE} and ZFS_CONFIGURE_TARGETS=${ZFS_CONFIGURE_TARGETS}" && \
+    ./configure -v \
+    --with-linux=/kernel-src \
+    --with-linux-obj=/kernel-out \
+    # configure only kernel modules. no need for userspace libs
+    --with-config=kernel \
+    ${ZFS_CONFIGURE_TARGETS} && \
+    ./scripts/make_gitrev.sh
+
+RUN --mount=type=cache,target=/root/.cache/ccache,id=zfs-ccache-${TARGETARCH} \
+    make CC="${CC}" -C module -j$(nproc) && \
+    make -C module INSTALL_MOD_STRIP=1 INSTALL_MOD_PATH=/tmp/kernel-modules install && \
+    ccache -s | tee -a /ccache-stats.txt
+
+# Hailo accelerator drivers - we do not use their Makefile, we build the
+# out-of-tree module directly.
+#
+# Hailo split the driver line, so BOTH branches are required for full hardware
+# coverage:
+#   4.x  module hailo_pci     - Hailo-8 (1e60:2864). 4.23+ narrowed to Hailo-8 only.
+#   5.x  module hailo1x_pci   - Hailo-10H/15L/MARS (1e60:26a2/43a2/45c4). No Hailo-8.
+# The module names differ and the PCI id tables are disjoint, so both load side by
+# side. Building only one drops hardware: 4.x-only loses Hailo-10H/15L/MARS,
+# 5.x-only loses Hailo-8.
+#
+# Note the matching HailoRT userspace in the workload container is version-locked
+# to the driver branch, so bumping these changes which app images work.
+ARG HAILO_V4_VERSION=v4.24.0
+ARG HAILO_V5_VERSION=v5.4.0
+ADD https://github.com/hailo-ai/hailort-drivers.git#${HAILO_V4_VERSION} /tmp/hailo-v4
+ADD https://github.com/hailo-ai/hailort-drivers.git#${HAILO_V5_VERSION} /tmp/hailo-v5
+RUN --mount=type=cache,target=/root/.cache/ccache,id=hailo-ccache-${TARGETARCH} \
+    set -e; \
+    for d in /tmp/hailo-v4/linux/pcie /tmp/hailo-v5/linux/pcie; do \
+      echo "Building Hailo driver from $d"; \
+      make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" M="$d" -C /kernel-src -j$(nproc); \
+      make O=/kernel-out LOCALVERSION="-${LOCALVERSION}" M="$d" -C /kernel-src INSTALL_MOD_STRIP=1 \
+        INSTALL_MOD_PATH=/tmp/kernel-modules modules_install; \
+    done; \
+    find /tmp/kernel-modules -name 'hailo*.ko*' -exec ls -l {} \; ; \
+    ccache -s | tee -a /ccache-stats.txt
+
+# NVIDIA open GPU kernel modules (compute/AI only: nvidia + nvidia-uvm).
+#
+# Built here, inside the kernel build, because CONFIG_MODULE_SIG_FORCE requires every
+# module to be signed by a key the kernel trusts, and the only such key is the one
+# kbuild generates in this build context (certs/signing_key.pem). modules_install
+# signs it for us via CONFIG_MODULE_SIG_ALL.
+#
+# The NVIDIA user-space half (libcuda/NVML, ~500MB) is NOT here - it needs no
+# signature and ships as a separate EVE package staged to /opt/vendor/nvidia. Both
+# halves and the GSP firmware are pinned by NVIDIA to the exact same version, so
+# both must be sourced at NVIDIA_DRIVER_VERSION from this same Ubuntu pool.
+#
+# Ubuntu's archive rather than NVIDIA's own repo, because it is internally
+# consistent: kernel module source, userland, nvidia-smi and firmware all exist at
+# one version. NVIDIA's repo ships a newer libnvidia-compute but a transitional,
+# empty nvidia-utils, so a matching nvidia-smi is not obtainable there.
+#
+# amd64 only. Empty NVIDIA_DRIVER_VERSION (the default) skips the whole step.
+ARG NVIDIA_DRIVER_BRANCH=580
+ARG NVIDIA_DRIVER_UPSTREAM=
+ARG NVIDIA_DRIVER_VERSION=
+ARG NVIDIA_DEB_POOL=http://archive.ubuntu.com/ubuntu/pool/restricted/n
+RUN --mount=type=cache,target=/root/.cache/ccache,id=nvidia-ccache-${TARGETARCH} \
+    if [ -n "${NVIDIA_DRIVER_VERSION}" ] && [ "${TARGETARCH}" = "amd64" ]; then \
+      set -e; \
+      pool="${NVIDIA_DEB_POOL}/nvidia-graphics-drivers-${NVIDIA_DRIVER_BRANCH}"; \
+      deb="nvidia-kernel-source-${NVIDIA_DRIVER_BRANCH}-open_${NVIDIA_DRIVER_VERSION}_amd64.deb"; \
+      echo "Fetching ${deb}"; \
+      curl -fsSL -o /tmp/nv.deb "${pool}/${deb}"; \
+      data=$(ar t /tmp/nv.deb | grep '^data\.tar'); \
+      case "$data" in \
+        *.zst) ar p /tmp/nv.deb "$data" | zstd -dc | tar -x -C / ;; \
+        *.xz)  ar p /tmp/nv.deb "$data" | xz -dc   | tar -x -C / ;; \
+        *)     echo "unhandled deb payload: $data"; exit 1 ;; \
+      esac; \
+      nvsrc=$(echo /usr/src/nvidia-*); \
+      test -d "$nvsrc" || { echo "nvidia source dir not found"; exit 1; }; \
+      # Without pahole.sh the .ko links and then BTF generation fails with exit 127,
+      # and kbuild DELETES the module - which looks like a compile error. Ubuntu ships
+      # it; NVIDIA's own repo does not. Fail loudly rather than mysteriously.
+      test -x "$nvsrc/pahole.sh" || { echo "$nvsrc/pahole.sh missing: BTF generation would delete the built module"; exit 1; }; \
+      make -C "$nvsrc" -j$(nproc) modules \
+        SYSSRC=/kernel-src SYSOUT=/kernel-out \
+        NV_EXCLUDE_KERNEL_MODULES="nvidia-modeset nvidia-drm nvidia-peermem nvidia-vgpu-vfio"; \
+      test -f "$nvsrc/nvidia.ko" && test -f "$nvsrc/nvidia-uvm.ko"; \
+      make -C /kernel-src O=/kernel-out LOCALVERSION="-${LOCALVERSION}" M="$nvsrc" \
+        PAHOLE="$nvsrc/pahole.sh" INSTALL_MOD_STRIP=1 \
+        INSTALL_MOD_PATH=/tmp/kernel-modules modules_install; \
+      find /tmp/kernel-modules -name 'nvidia*.ko*' -exec ls -l {} \; ; \
+      ccache -s | tee -a /ccache-stats.txt; \
+    fi
+
+# NVIDIA GSP firmware. Must live in /lib/firmware because the in-kernel firmware
+# loader resolves paths in the host mount namespace and cannot see /opt/vendor.
+# Version-locked to the kernel modules above, hence the same version arg. Note
+# Ubuntu puts the upstream version inside the package name as well as in the
+# package version.
+RUN if [ -n "${NVIDIA_DRIVER_VERSION}" ] && [ -n "${NVIDIA_DRIVER_UPSTREAM}" ] && [ "${TARGETARCH}" = "amd64" ]; then \
+      set -e; \
+      pool="${NVIDIA_DEB_POOL}/nvidia-graphics-drivers-${NVIDIA_DRIVER_BRANCH}"; \
+      deb="nvidia-firmware-${NVIDIA_DRIVER_BRANCH}-${NVIDIA_DRIVER_UPSTREAM}_${NVIDIA_DRIVER_VERSION}_amd64.deb"; \
+      echo "Fetching ${deb}"; \
+      curl -fsSL -o /tmp/nvfw.deb "${pool}/${deb}"; \
+      data=$(ar t /tmp/nvfw.deb | grep '^data\.tar'); \
+      mkdir -p /tmp/nvfw; \
+      case "$data" in \
+        *.zst) ar p /tmp/nvfw.deb "$data" | zstd -dc | tar -x -C /tmp/nvfw ;; \
+        *.xz)  ar p /tmp/nvfw.deb "$data" | xz -dc   | tar -x -C /tmp/nvfw ;; \
+        *)     echo "unhandled deb payload: $data"; exit 1 ;; \
+      esac; \
+      mkdir -p /tmp/kernel-modules/lib/firmware; \
+      cp -a /tmp/nvfw/lib/firmware/nvidia /tmp/kernel-modules/lib/firmware/; \
+      du -sh /tmp/kernel-modules/lib/firmware/nvidia; \
+    fi
+
+
+FROM builder as artifacts
+
+WORKDIR /kernel-out
+
+# package artifacts
+RUN mkdir /out && \
+    cp ${KERNEL_BIN} /out/kernel && \
+    cp System.map /out && \
+    DVER=$(make kernelrelease) && \
+    DIR=linux-debug-$DVER && \
+    rsync -rv --include '*/' --include '*.dwo' --exclude '*' --prune-empty-dirs . /tmp/$DIR && \
+    cp vmlinux /tmp/$DIR && \
+    tar -cf /out/kernel-debug.tar -C /tmp $DIR
+
+# copy build time generated module-signing public key, used for diffing builds
+RUN DVER=$(basename "$(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)"); \
+    if [ -f "/kernel-out/certs/signing_key.x509" ]; then \
+        cp /kernel-out/certs/signing_key.x509 "/tmp/kernel-modules/lib/modules/$DVER"; \
+    elif [ -f "/kernel-src/certs/signing_key.x509" ]; then \
+        cp /kernel-src/certs/signing_key.x509 "/tmp/kernel-modules/lib/modules/$DVER"; \
+    fi
+
+# Package all the modules up
+RUN ( DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)) && \
+      cd /tmp/kernel-modules/lib/modules/$DVER && \
+      rm build && \
+      ln -s /usr/src/linux-headers-$DVER build ) && \
+    ( cd /tmp/kernel-modules && tar cf /out/kernel.tar . )
+
+# Headers (userspace API)
+RUN mkdir -p /tmp/kernel-headers/usr && \
+    make INSTALL_HDR_PATH=/tmp/kernel-headers/usr headers_install && \
+    ( cd /tmp/kernel-headers && tar cf /out/kernel-headers.tar usr )
+
+# Headers (kernel development)
+RUN DVER=$(basename $(find /tmp/kernel-modules/lib/modules/ -mindepth 1 -maxdepth 1)) && \
+    dir=/tmp/usr/src/linux-headers-$DVER && \
+    mkdir -p $dir && \
+    cp /kernel-out/.config $dir && \
+    cp /kernel-out/Module.symvers $dir && \
+    find . -path './include/*' -prune -o \
+           -path './arch/*/include' -prune -o \
+           -path './scripts/*' -prune -o \
+           -type f \( -name 'Makefile*' -o -name 'Kconfig*' -o -name 'Kbuild*' -o \
+                      -name '*.lds' -o -name '*.pl' -o -name '*.sh' \) | \
+         tar cf - -T - | (cd $dir; tar xf -) && \
+    ( cd /tmp && tar cf /out/kernel-dev.tar usr/src )
+
+FROM scratch
+ENTRYPOINT []
+CMD []
+WORKDIR /
+COPY --from=artifacts /out/* /

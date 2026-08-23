@@ -1,0 +1,18 @@
+# Boot-path symbols for the core and rt flavours. These must be =y because
+# EVE has no initramfs. This is core's own storage set, deliberately smaller
+# than hwe's boot.fragment: core targets eve-kvm on known hardware under a
+# hard 290 MiB rootfs cap, so importing hwe's server-HBA list would add
+# coverage core has no use for.
+
+BLK_DEV_NVME
+SATA_AHCI
+BLK_DEV_SD
+SCSI_MPT3SAS
+SCSI_SMARTPQI
+SCSI_HPSA
+MEGARAID_SAS
+VIRTIO_BLK
+BLK_DEV_DM
+EXT4_FS
+SQUASHFS
+VFAT_FS

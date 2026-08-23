@@ -1,0 +1,294 @@
+# Title: Dockerfile for building the EVE kernel
+
+KERNEL_CONFIG_FLAVOR?=hwe
+
+VERSION=$(shell git rev-parse --short=12 HEAD)
+DIRTY=$(shell git diff --quiet || echo '-dirty')
+EVE_FLAVOR=generic
+ARCHITECTURE=amd64
+KERNEL_TAG=v6.18.46
+PLATFORM=linux/$(ARCHITECTURE)
+
+# Flavour resolution. Each flavour resolves to four independent facts: a base
+# defconfig, an ordered fragment list, whether the RT patch is applied, and
+# whether the NVIDIA out-of-tree drivers are built.
+#
+# Fragments applied to one flavour must be disjoint - eve/check-config.py
+# enforces this - so the list order does not affect the result.
+#
+# ai is hwe plus NVIDIA. It has no defconfig of its own.
+
+BASE_DEFCONFIG_core := eve-core_defconfig
+BASE_DEFCONFIG_rt   := eve-core_defconfig
+BASE_DEFCONFIG_hwe  := eve-hwe_defconfig
+BASE_DEFCONFIG_ai   := eve-hwe_defconfig
+
+FRAGMENTS_core := arch/x86/configs/common.fragment
+FRAGMENTS_rt   := arch/x86/configs/common.fragment arch/x86/configs/rt.fragment
+# erofs.fragment is last and separable: EROFS is still experimental, so
+# building without it means deleting that one entry - no defconfig edit.
+FRAGMENTS_hwe  := arch/x86/configs/common.fragment arch/x86/configs/deny.fragment arch/x86/configs/boot.fragment arch/x86/configs/erofs.fragment
+FRAGMENTS_ai   := $(FRAGMENTS_hwe)
+
+APPLY_RT_PATCH_rt := 1
+
+# NVIDIA is defined ONLY for the ai flavour. Deliberately not a global default
+# with a later override: make gives command-line assignments precedence over
+# everything but `override`, so `make KERNEL_CONFIG_FLAVOR=core
+# NVIDIA_DRIVER_VERSION=...` would defeat a blank-it-afterwards approach and
+# build core with the NVIDIA payload. Defining it per-flavour removes the hole
+# instead of patching it.
+#
+# The payload is ~117 MB (105 MB GSP firmware + 12 MB out-of-tree modules).
+# For core, which must fit a 290 MiB rootfs with ~4.9 MiB of headroom, that is
+# roughly 20x the entire budget. It was a global default because when NVIDIA
+# was added (ae77c5c28688) this branch had one flavour and one defconfig, so
+# "always" and "for ai" were the same statement. They no longer are.
+#
+# Sourced from Ubuntu's archive, not NVIDIA's own repo, so that the kernel module,
+# the userland shipped by EVE's nvidia-dgpu package, nvidia-smi and the GSP firmware
+# all exist at one version - NVIDIA pins them to each other with exact equality.
+#
+# UPSTREAM is the bare driver version, which Ubuntu embeds in the firmware package
+# NAME as well as its version. VERSION is the full Debian package version.
+# Kernel compatibility is decided by the release's conftest.sh probes, not the branch:
+# 580.65.06 knows kernel APIs only up to 6.15, 580.173.02 probes 6.17/6.18/6.19.
+NVIDIA_DRIVER_BRANCH_ai   := 580
+NVIDIA_DRIVER_UPSTREAM_ai := 580.173.02
+NVIDIA_DRIVER_VERSION_ai  := 580.173.02-0ubuntu0.24.04.1
+
+BASE_DEFCONFIG := $(BASE_DEFCONFIG_$(KERNEL_CONFIG_FLAVOR))
+KERNEL_FRAGMENTS := $(FRAGMENTS_$(KERNEL_CONFIG_FLAVOR))
+APPLY_RT_PATCH := $(APPLY_RT_PATCH_$(KERNEL_CONFIG_FLAVOR))
+
+ifeq ($(BASE_DEFCONFIG),)
+$(error Unknown KERNEL_CONFIG_FLAVOR '$(KERNEL_CONFIG_FLAVOR)'; expected core, rt, hwe or ai)
+endif
+
+# NVIDIA is defined ONLY for ai (see table above); for core, rt and hwe these
+# expand empty, which Dockerfile.gcc treats as "build no NVIDIA modules". No
+# ?=, no global default, nothing for a command-line assignment to latch onto.
+NVIDIA_DRIVER_BRANCH   := $(NVIDIA_DRIVER_BRANCH_$(KERNEL_CONFIG_FLAVOR))
+NVIDIA_DRIVER_UPSTREAM := $(NVIDIA_DRIVER_UPSTREAM_$(KERNEL_CONFIG_FLAVOR))
+NVIDIA_DRIVER_VERSION  := $(NVIDIA_DRIVER_VERSION_$(KERNEL_CONFIG_FLAVOR))
+
+BUILD_USER:=$(shell id -un)
+
+IMAGE_REPOSITORY?=lfedge/eve-kernel
+
+HOSTARCH:=$(subst aarch64,arm64,$(subst x86_64,amd64,$(shell uname -m)))
+UNAME_OS_LCASE:=$(shell uname -s | tr '[A-Z]' '[a-z]')
+
+# linuxkit version. This **must** be a published semver version so it can be
+# downloaded already compiled from the release page at
+# https://github.com/linuxkit/linuxkit/releases
+LINUXKIT_VERSION ?= v1.8.1
+LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
+
+# Set LINUXKIT_GIT_URL to build linuxkit from a pinned commit instead of
+# downloading a release binary.  LINUXKIT_GIT_REF must be a commit hash
+# (reproducible, no network call at parse time).
+# Update the hash by running: git ls-remote https://github.com/linuxkit/linuxkit master
+# Leave LINUXKIT_GIT_URL unset (default) to use the release binary.
+LINUXKIT_GIT_URL ?= https://github.com/linuxkit/linuxkit
+LINUXKIT_GIT_REF ?= 3bf33c3a11fc20b459195294a7d8980cbca4195b
+
+ifneq ($(LINUXKIT_GIT_URL),)
+_LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
+LK := /tmp/linuxkit-$(_LK_VERSION)
+else
+LK := /tmp/linuxkit-$(LINUXKIT_VERSION)
+endif
+
+SOURCE_DATE_EPOCH=$(shell git log -1 --format=%ct)
+BRANCH=eve-kernel-$(ARCHITECTURE)-$(KERNEL_TAG)-$(EVE_FLAVOR)
+# make sure we get a date in correct format, otherwise initramfs cpio mtime will be variable
+KBUILD_BUILD_TIMESTAMP=$(shell git log -1 --format=%cd | cut -f1 -d"+")
+
+ifeq ($(BUILDKIT_PROGRESS),)
+    export BUILDKIT_PROGRESS := plain
+endif
+
+# if BRANCH is defined on a command line we are running under CI
+# we add user name to DIRTY to avoid docker tag conflicts
+# when building on a shared machine with shared docker cache
+ifeq ($(origin BRANCH), file)
+	DIRTY:=-$(BUILD_USER)$(DIRTY)
+endif
+
+.PHONY: all help
+
+all: kernel-gcc
+
+help: Makefile
+	@echo
+	@echo "Makefile to build EVE kernel"
+	@echo "Usage: make [target]"
+	@echo "Targets:"
+	@echo "  kernel-gcc: build kernel with gcc"
+	@echo "  docker-tag-gcc: print docker tag for gcc kernel"
+	@echo "  push-gcc: push gcc kernel to docker.io"
+	@echo "  rt-config: download RT patch, apply it, and merge RT fragment to create .config"
+	@echo "  gen-rt-fragment: regenerate RT fragment from current .config"
+	@echo "  rt-clean: revert RT patch and remove RT stamp file"
+	@echo "  clean: remove generated files"
+	@echo
+
+.PHONY: linuxkit
+linuxkit: $(LK)
+
+ifneq ($(LINUXKIT_GIT_URL),)
+# ── Case 1: build from pinned commit ─────────────────────────────────────────
+# The hash is used as the binary name — make skips the recipe if already built.
+$(LK):
+	@echo "Building linuxkit from $(LINUXKIT_GIT_URL) at $(LINUXKIT_GIT_REF)"
+	@tmp=$$(mktemp -d) && \
+	  git clone --filter=blob:none $(LINUXKIT_GIT_URL) $$tmp && \
+	  git -C $$tmp checkout $(LINUXKIT_GIT_REF) && \
+	  $(MAKE) -C $$tmp local-build LOCAL_TARGET=$(abspath $@) && \
+	  rm -rf $$tmp
+else
+# ── Case 2: download upstream release binary ──────────────────────────────────
+$(LK):
+	@echo "Downloading linuxkit release $(LINUXKIT_VERSION)"
+	curl -fsSL -o $@ $(LINUXKIT_SOURCE)/releases/download/$(LINUXKIT_VERSION)/linuxkit-$(UNAME_OS_LCASE)-$(HOSTARCH) && chmod +x $@
+endif
+
+# Image tag with KERNEL_CONFIG_FLAVOR (always used for builds and push)
+IMAGE_TAG_WITH_FLAVOR := $(IMAGE_REPOSITORY):$(BRANCH)-$(KERNEL_CONFIG_FLAVOR)-$(VERSION)$(DIRTY)
+
+# Image tag without KERNEL_CONFIG_FLAVOR (only used if FLAVOR == core)
+# used for backwards compatibility with old EVE versions before KERNEL_CONFIG_FLAVOR was introduced
+IMAGE_TAG_NO_FLAVOR := $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)
+
+RT_BASE_DEFCONFIG := eve-core_defconfig
+RT_FRAGMENT       := arch/x86/configs/rt.fragment
+RT_STAMP          := .rt-merged.stamp
+# RT lags the stable line: 6.18 has RT patches only for .13, .35 and .37, while stable
+# is at .46. patch-6.18.37-rt6 applies to 6.18.46 without fuzz (verified), but it is a
+# point-release mismatch and is not an officially supported combination. Re-check when
+# bumping, and prefer an exact-version RT patch if one appears.
+RT_PATCH_URL      := https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.18/patch-6.18.37-rt6.patch.gz
+RT_PATCH_FILE     := .rt-patch-applied.stamp
+
+.PHONY: rt-config gen-rt-fragment rt-clean
+
+# 1) Download and apply RT patch, then merge RT fragment onto base -> write ./.config
+#    We build a STAMP, not ".config" as a target, to avoid a cycle.
+rt-config: $(RT_STAMP)
+$(RT_STAMP): $(RT_PATCH_FILE) $(RT_FRAGMENT) arch/x86/configs/$(RT_BASE_DEFCONFIG)
+	@echo "Merging $(RT_FRAGMENT) onto $(RT_BASE_DEFCONFIG) -> write ./.config"
+	@mv -f .config .config.bak 2>/dev/null || true
+	KCONFIG_CONFIG=.config $(MAKE) -s $(RT_BASE_DEFCONFIG)
+	@test -s $(RT_FRAGMENT) || { echo "ERROR: missing or empty $(RT_FRAGMENT)"; exit 1; }
+	# merge only (-m); don't let merge_config.sh run 'make' internally
+	# no -Q: it sets WARNOVERRIDE=true and silences "Value of $$CFG is
+	# redefined by fragment", the one diagnostic that matters once more
+	# than one fragment is applied.
+	KCONFIG_CONFIG=.config scripts/kconfig/merge_config.sh -m .config $(RT_FRAGMENT)
+	$(MAKE) -s olddefconfig
+	@grep -q '^CONFIG_PREEMPT_RT=y$$' .config || { echo "ERROR: CONFIG_PREEMPT_RT not enabled after merge"; exit 1; }
+	@touch $(RT_STAMP)
+	@echo "OK: wrote merged RT config to ./.config (backup: .config.bak)"
+
+# Download and apply RT patch
+$(RT_PATCH_FILE):
+	@if [ -f $(RT_PATCH_FILE) ]; then \
+		echo "RT patch already applied ($(RT_PATCH_FILE) exists)"; \
+	else \
+		echo "Downloading RT patch from $(RT_PATCH_URL)"; \
+		curl -fsSL $(RT_PATCH_URL) | gunzip > /tmp/rt-patch.patch; \
+		echo "Applying RT patch..."; \
+		if patch -p1 --dry-run -N -s < /tmp/rt-patch.patch > /dev/null 2>&1; then \
+			patch -p1 -N < /tmp/rt-patch.patch; \
+			touch $(RT_PATCH_FILE); \
+			echo "RT patch applied successfully"; \
+		else \
+			echo "ERROR: Failed to apply RT patch or already applied"; \
+			rm -f /tmp/rt-patch.patch; \
+			exit 1; \
+		fi; \
+		rm -f /tmp/rt-patch.patch; \
+	fi
+
+# Revert RT patch and clean RT configuration
+rt-clean:
+	@if [ -f $(RT_PATCH_FILE) ]; then \
+		echo "Reverting RT patch..."; \
+		curl -fsSL $(RT_PATCH_URL) | gunzip > /tmp/rt-patch.patch; \
+		if patch -p1 -R -N < /tmp/rt-patch.patch; then \
+			echo "RT patch reverted successfully"; \
+		else \
+			echo "WARNING: Failed to cleanly revert RT patch, you may need to check git status"; \
+		fi; \
+		rm -f /tmp/rt-patch.patch $(RT_PATCH_FILE); \
+	else \
+		echo "No RT patch to revert ($(RT_PATCH_FILE) does not exist)"; \
+	fi
+	@rm -f $(RT_STAMP)
+	@echo "Removed $(RT_STAMP)"
+	@echo "RT configuration cleaned"
+
+# 2) After you've edited ./.config (e.g. via 'make menuconfig'),
+#    regenerate the minimal fragment as delta vs the base defconfig.
+gen-rt-fragment: $(RT_FRAGMENT)
+$(RT_FRAGMENT): .config arch/x86/configs/$(RT_BASE_DEFCONFIG)
+	@echo "Generating $(RT_FRAGMENT) as delta of current ./.config vs $(RT_BASE_DEFCONFIG)"
+	@tmpdir=$$(mktemp -d); \
+	  KCONFIG_CONFIG=$$tmpdir/base.config $(MAKE) -s $(RT_BASE_DEFCONFIG); \
+	  KCONFIG_CONFIG=$$tmpdir/base.config $(MAKE) -s olddefconfig; \
+	  scripts/diffconfig -m $$tmpdir/base.config .config > $(RT_FRAGMENT).tmp; \
+	  mv $(RT_FRAGMENT).tmp $(RT_FRAGMENT); \
+	  wc -l < $(RT_FRAGMENT) | xargs printf "Wrote %s lines to %s\n" - "$(RT_FRAGMENT)"; \
+	  rm -rf "$$tmpdir"
+
+
+KERNEL_BUILD_ARGS_FILE := $(shell mktemp -u)-kernel-build-args
+
+kernel-build-%: Makefile.eve $(LK)
+	@echo "Building kernel version $(BRANCH):$(KERNEL_CONFIG_FLAVOR)-$(VERSION)-$* with compiler $*"
+	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nBASE_DEFCONFIG=%s\nKERNEL_FRAGMENTS=%s\nAPPLY_RT_PATCH=%s\nRT_PATCH_URL=%s\nKERNEL_FLAVOUR=%s\nNVIDIA_DRIVER_BRANCH=%s\nNVIDIA_DRIVER_UPSTREAM=%s\nNVIDIA_DRIVER_VERSION=%s\n' \
+	  '$(SOURCE_DATE_EPOCH)' '$(KBUILD_BUILD_TIMESTAMP)' \
+	  '$(KERNEL_CONFIG_FLAVOR)-$(VERSION)$(DIRTY)' \
+	  '$(BASE_DEFCONFIG)' '$(KERNEL_FRAGMENTS)' '$(APPLY_RT_PATCH)' '$(RT_PATCH_URL)' \
+	  '$(KERNEL_CONFIG_FLAVOR)' \
+	  '$(NVIDIA_DRIVER_BRANCH)' '$(NVIDIA_DRIVER_UPSTREAM)' '$(NVIDIA_DRIVER_VERSION)' \
+	  > $(KERNEL_BUILD_ARGS_FILE)
+	$(LK) pkg build \
+	  --force \
+	  --dockerfile Dockerfile.$* \
+	  --platforms linux/$(ARCHITECTURE) \
+	  --tag $(BRANCH)-$(KERNEL_CONFIG_FLAVOR)-$(VERSION)$(DIRTY)-$* \
+	  --build-arg-file $(KERNEL_BUILD_ARGS_FILE) \
+	  .
+	@rm -f $(KERNEL_BUILD_ARGS_FILE)
+
+
+# we need these intermediate targets to make .PHONY work for pattern rules
+kernel-gcc: kernel-build-gcc
+docker-tag-gcc: docker-tag-generate-gcc
+push-gcc: push-image-gcc
+
+clean-gcc: clean-image-gcc
+
+.PHONY: kernel-gcc docker-tag-gcc push-gcc clean-gcc
+
+docker-tag-generate-%:
+	@echo "docker.io/$(IMAGE_TAG_WITH_FLAVOR)-$*"
+
+push-image-%:
+	$(if $(DIRTY), $(error "Not pushing since the repo is dirty"))
+	$(LK) cache push $(IMAGE_TAG_WITH_FLAVOR)-$*
+	$(if $(filter core,$(KERNEL_CONFIG_FLAVOR)), \
+	  $(LK) pkg remote-tag \
+	    $(IMAGE_TAG_WITH_FLAVOR)-$* \
+	    $(IMAGE_TAG_NO_FLAVOR)-$*,)
+clean-image-%:
+	$(LK) cache rm $(IMAGE_TAG_WITH_FLAVOR)-$* 2>/dev/null || true
+	docker rmi $(IMAGE_TAG_WITH_FLAVOR)-$* 2>/dev/null || true
+
+.PHONY: clean
+clean:
+	$(LK) cache clean
+	rm -f $(LK)
+	docker kill $(BUILD_KIT_BUILDER)

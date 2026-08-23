@@ -1,0 +1,18 @@
+Ubuntu kernel config vendored as a REFERENCE ONLY.
+
+It is never an input to a defconfig. Its sole purpose is the advisory drift
+report: "Ubuntu enables these drivers eve-hwe does not". Refreshing it must
+never modify a defconfig - carrying the defconfig forward is what preserves
+the EVE decisions accumulated in it (see spec D10, D11).
+
+Release:  Ubuntu 26.04 LTS (resolute)
+Source:   linux 7.0.0-30.30
+Package:  linux-buildinfo-7.0.0-30-generic_7.0.0-30.30_amd64.deb
+URL:      http://archive.ubuntu.com/ubuntu/pool/main/l/linux/linux-buildinfo-7.0.0-30-generic_7.0.0-30.30_amd64.deb
+sha256:   24af1791fba89c89927ebf221d19acb72c044edda2699f68172e116d64daa520
+Fetched:  2026-08-23
+
+Note: Ubuntu 26.04 ships 7.0, which is not a kernel.org longterm line.
+EVE targets 6.18, which is longterm. No Ubuntu release ships 6.18 - plucky
+is 6.14, questing 6.17, resolute 7.0 - so the donor never matches EVE's
+kernel version exactly.
