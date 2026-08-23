@@ -1,0 +1,24 @@
+# EROFS and its compression backends.
+#
+# Kept in its own fragment because EROFS is still experimental in EVE: to
+# build without it, remove this file from FRAGMENTS_hwe and FRAGMENTS_ai in
+# Makefile.eve. No defconfig edit, no rebuild of anything else.
+#
+# core and rt do not take this fragment - eve-core_defconfig has no EROFS and
+# uses squashfs for the rootfs.
+#
+# Was commit 10dd0cefcabf. Only EROFS_FS=y is an actual change from the
+# Ubuntu derivation's resolved config; the rest already match Ubuntu's
+# defaults for EROFS_FS=m and are listed explicitly so the fragment is a
+# complete, self-contained EROFS policy rather than one bare flip.
+CONFIG_EROFS_FS=y
+CONFIG_EROFS_FS_BACKED_BY_FILE=y
+CONFIG_EROFS_FS_SECURITY=y
+CONFIG_EROFS_FS_POSIX_ACL=y
+CONFIG_EROFS_FS_XATTR=y
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_LZMA=y
+CONFIG_EROFS_FS_ZIP_DEFLATE=y
+CONFIG_EROFS_FS_ZIP_ZSTD=y
+CONFIG_EROFS_FS_ZIP_ACCEL=y
+CONFIG_EROFS_FS_PCPU_KTHREAD=y

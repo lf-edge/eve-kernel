@@ -1,0 +1,34 @@
+# CONFIG_ACPI_PROCESSOR is not set
+CONFIG_COMPACT_UNEVICTABLE_DEFAULT=0
+# CONFIG_CPU_FREQ is not set
+# CONFIG_CPU_IDLE is not set
+CONFIG_HZ=250
+# CONFIG_HZ_100 is not set
+CONFIG_HZ_250=y
+# CONFIG_NO_HZ is not set
+CONFIG_NO_HZ_FULL=y
+# CONFIG_NO_HZ_IDLE is not set
+# CONFIG_PM is not set
+CONFIG_PREEMPT_LAZY=y
+CONFIG_PREEMPT_RT=y
+# CONFIG_SCHED_MC is not set
+CONFIG_VIRT_CPU_ACCOUNTING_GEN=y
+CONFIG_X86_CPU_RESCTRL=y
+# CONFIG_XEN is not set
+# rt disables Xen entirely (above), which is CONFIG_XEN_PVCALLS_BACKEND's
+# Kconfig dependency (drivers/xen/Kconfig). common.fragment requests
+# XEN_PVCALLS_BACKEND=y; stating the consequence explicitly here, rather
+# than relying on kconfig to force it off silently, lets
+# check_fragment_values see rt.fragment as the last (and correct) mention
+# of this symbol instead of reporting an unheld request.
+# CONFIG_XEN_PVCALLS_BACKEND is not set
+CONFIG_CONTEXT_TRACKING_USER=y
+# CONFIG_CONTEXT_TRACKING_USER_FORCE is not set
+CONFIG_PROC_CPU_RESCTRL=y
+CONFIG_RCU_BOOST=y
+CONFIG_RCU_BOOST_DELAY=500
+# CONFIG_RCU_LAZY is not set
+CONFIG_RCU_NOCB_CPU=y
+CONFIG_RCU_NOCB_CPU_CB_BOOST=y
+# CONFIG_RCU_NOCB_CPU_DEFAULT_ALL is not set
+CONFIG_VIRT_CPU_ACCOUNTING=y

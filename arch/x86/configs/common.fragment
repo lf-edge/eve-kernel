@@ -1,0 +1,176 @@
+# Options that must hold for every flavour, re-applied on every build so a
+# config edit or a version bump cannot silently drop them. Everything here is
+# size-neutral or size-negative, which is why it is safe on core under the
+# 290 MiB rootfs cap. The size-positive boot-path list is boot.fragment.
+#
+# Derived from the delta between the pristine Ubuntu HWE derivation
+# (370291a3d356) and HEAD's resolved eve-hwe_defconfig. See
+# .superpowers/sdd/2026-08-23-eve-kernel-6.18-config-flavors/eve-delta.fragment.
+
+# EVE behavioural options. Commit bf841829cf73 restored these by hand after
+# the Ubuntu derivation dropped them; keeping them here means the derivation
+# cannot drop them again.
+CONFIG_PANIC_ON_OOPS=y
+CONFIG_BOOTPARAM_SOFTLOCKUP_PANIC=y
+CONFIG_IKCONFIG=y
+CONFIG_IKCONFIG_PROC=y
+CONFIG_RT_GROUP_SCHED=y
+# CONFIG_RT_GROUP_SCHED_DEFAULT_DISABLED is not set
+CONFIG_WQ_WATCHDOG=y
+CONFIG_PRINTK_CALLER=y
+CONFIG_LEGACY_VSYSCALL_NONE=y
+# CONFIG_LEGACY_VSYSCALL_XONLY is not set
+CONFIG_IO_STRICT_DEVMEM=y
+CONFIG_DEBUG_LIST=y
+CONFIG_LIST_HARDENED=y
+CONFIG_NF_CONNTRACK_PROCFS=y
+CONFIG_XFRM_SUB_POLICY=y
+
+# Module signing. EVE enforces this unconditionally, unlike Ubuntu, which
+# relies on lockdown under Secure Boot instead. MODULE_SIG and MODULE_SIG_ALL
+# already default to y from the Ubuntu derivation; pinned here anyway so a
+# future derivation cannot drop them. Was commit eb129c895dd1.
+CONFIG_MODULE_SIG=y
+CONFIG_MODULE_SIG_FORCE=y
+CONFIG_MODULE_SIG_ALL=y
+CONFIG_MODULE_SIG_SHA256=y
+CONFIG_MODULE_SIG_HASH="sha256"
+# CONFIG_MODULE_SIG_SHA512 is not set
+
+# Console. EVE uses the EFI framebuffer via simpledrm. GPU DRM drivers are
+# n rather than m plus a blacklist entry: pkg/udev is in the rootfs so
+# autoload is live, and EVE's blacklist mechanism fails silently for
+# built-ins - it lists usb-storage while CONFIG_USB_STORAGE=y. This is D9 in
+# the design spec: a locked decision, not derived from any commit's delta -
+# no commit on this branch actually flipped these five to n yet.
+CONFIG_DRM=y
+CONFIG_SYSFB_SIMPLEFB=y
+CONFIG_DRM_SIMPLEDRM=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+# CONFIG_DRM_I915 is not set
+# CONFIG_DRM_AMDGPU is not set
+# CONFIG_DRM_XE is not set
+# CONFIG_DRM_NOUVEAU is not set
+# CONFIG_DRM_RADEON is not set
+
+# Signing keys. Ubuntu points these at its own certs; EVE clears them so the
+# kernel trusts only the ephemeral key kbuild generates. Was commit
+# 6b668e62ef45.
+CONFIG_SYSTEM_TRUSTED_KEYS=""
+CONFIG_SYSTEM_REVOCATION_KEYS=""
+
+# SYSTEM_REVOCATION_KEYS is only visible once SYSTEM_BLACKLIST_KEYRING is
+# enabled (security/integrity/platform_certs/Kconfig); eve-core_defconfig
+# never turns it on, so the request above was invisible and silently
+# failed to hold there. Enabling it here, on every flavour, also gives EVE
+# the revocation list as a real escape hatch if a module-signing key is
+# ever compromised - not just a means of making the empty-string request
+# satisfiable.
+CONFIG_SYSTEM_BLACKLIST_KEYRING=y
+CONFIG_SYSTEM_REVOCATION_LIST=y
+
+# Security. Absorbs the inline assertion previously at Dockerfile.gcc:131.
+# Was commit e76c6e90a73f.
+# CONFIG_BPF_KPROBE_OVERRIDE is not set
+
+# Hardware/driver exclusions.
+# INTEL_PCH_THERMAL: disabled, honouring ef7ccc4d151c on the 6.12 branch
+# which turned this driver off deliberately. Was commit bf841829cf73.
+# CONFIG_INTEL_PCH_THERMAL is not set
+
+# Kontron PLD. The upstream driver exists in 6.18 but is too minimal to work on
+# real Kontron hardware, and EVE's patched version is not ported to this branch
+# yet. Disabled here rather than by editing the defconfig, so re-enabling it when
+# working drivers land is deleting these four lines. Was commit 080ede291e77.
+# CONFIG_MFD_KEMPLD is not set
+# CONFIG_I2C_KEMPLD is not set
+# CONFIG_GPIO_KEMPLD is not set
+# CONFIG_KEMPLD_WDT is not set
+
+# Overlayfs. EVE's lower layers are squashfs, which has no UUID, so
+# XINO_AUTO's inode-number mapping attempt just logs "null uuid detected"
+# on every container layer. Was commit bf841829cf73.
+# CONFIG_OVERLAY_FS_XINO_AUTO is not set
+
+# Hyper-V guest support: EVE running as a guest on Hyper-V/Azure. HYPERV,
+# _NET, _BALLOON and _UTILS were the explicit ask in commit bf841829cf73;
+# the rest of this block is what that symbol's menu resolves to once
+# visible, carried here so the fragment reproduces HEAD exactly.
+#
+# HYPERV_STORAGE is not here: hv_storvsc hosts the root filesystem on a
+# Hyper-V/Azure guest, and EVE has no initramfs, so per boot.fragment's
+# qualification rule it belongs there as =y, not here as =m.
+CONFIG_HYPERV=y
+CONFIG_HYPERV_NET=y
+CONFIG_HYPERV_BALLOON=y
+CONFIG_HYPERV_UTILS=y
+CONFIG_HYPERV_IOMMU=y
+CONFIG_HYPERV_KEYBOARD=y
+CONFIG_HYPERV_TIMER=y
+CONFIG_HYPERV_VMBUS=y
+# CONFIG_DRM_HYPERV is not set
+# CONFIG_FB_HYPERV is not set
+# CONFIG_HID_HYPERV_MOUSE is not set
+# CONFIG_HYPERV_TESTING is not set
+# CONFIG_HYPERV_VSOCKETS is not set
+# CONFIG_HYPERV_VTL_MODE is not set
+# CONFIG_MSHV_ROOT is not set
+# CONFIG_PCI_HYPERV is not set
+# CONFIG_PCI_HYPERV_INTERFACE is not set
+# CONFIG_UIO_HV_GENERIC is not set
+
+# HV=xen guest support, alongside the Hyper-V block above. Was commit
+# bf841829cf73.
+CONFIG_XEN_PVCALLS_BACKEND=y
+
+# Out-of-tree drivers cherry-picked from the 6.12 branch. Both are optional
+# peripheral/platform enablement, not needed to reach the root filesystem,
+# so =m rather than =y: they cost nothing in the boot image and load only
+# on the hardware that needs them.
+#
+# USB_SERIAL_XR_RS485: drivers/usb/serial/Makefile guards two entirely
+# different drivers with similarly-named symbols:
+#   CONFIG_USB_SERIAL_XR        -> xr_serial.o (upstream, 2 device IDs:
+#                                  04e2:1400,1401)
+#   CONFIG_USB_SERIAL_XR_RS485  -> xr_usb_serial_common.o (EVE's vendor
+#                                  driver, cherry-picked from the 6.12
+#                                  branch, 12 device IDs: the two above
+#                                  plus 1402, 1403, 1410-1414, 1420-1424)
+# They are not interchangeable and one is not a superset replacement for
+# the other's symbol name despite the naming resemblance. EVE ships the
+# vendor driver (both eve-core_defconfig and eve-hwe_defconfig set
+# USB_SERIAL_XR_RS485=m on 6.12) for its wider device coverage, so set
+# that symbol here too. Do not "modernise" this back to USB_SERIAL_XR:
+# doing so silently drops support for 10 of the 12 device IDs.
+CONFIG_USB_SERIAL_XR_RS485=m
+
+# OS_EM32X: Operational Services EM320/EM321 platform support
+# (drivers/platform/x86/Kconfig), added by the 6.12 branch's EM320/EM321
+# commits. Depends on X86_64, I2C, LEDS_CLASS, LEDS_GPIO and
+# GPIO_PCA953X, all already satisfied on both base defconfigs (LEDS_GPIO
+# is raised to =y below for the Siemens IPC LEDs, which also covers this
+# dependency).
+CONFIG_OS_EM32X=m
+
+# Siemens Simatic IPC support (was commit c90f294962bd on the 6.12
+# branch, a defconfig-only change reproduced here as fragment content).
+# Upstream restructured the LED drivers into drivers/leds/simatic/ since
+# then: LEDS_SIEMENS_IPC127 no longer exists, replaced by
+# LEDS_SIEMENS_SIMATIC_IPC plus three GPIO-backed variants
+# (_APOLLOLAKE, _F7188X, _ELKHARTLAKE), all "default y" or "default
+# LEDS_SIEMENS_SIMATIC_IPC". So rather than forcing those four driver
+# symbols directly, this sets their Kconfig dependencies and lets them
+# auto-enable.
+#
+# One dependency changed identity from the 6.12 patch's list:
+# LEDS_SIEMENS_SIMATIC_IPC_APOLLOLAKE (i.e. IPC127E) now depends on
+# PINCTRL_BROXTON, not PINCTRL_ALDERLAKE as the 6.12-era symbol list
+# assumed - PINCTRL_ALDERLAKE gates unrelated Simatic battery-monitoring
+# symbols in 6.18, not any LED variant.
+CONFIG_INPUT_LEDS=m
+CONFIG_PINCTRL_BROXTON=y
+CONFIG_PINCTRL_ELKHARTLAKE=y
+CONFIG_GPIO_F7188X=y
+CONFIG_SIEMENS_SIMATIC_IPC=y
+CONFIG_LEDS_CLASS=y
+CONFIG_LEDS_GPIO=y

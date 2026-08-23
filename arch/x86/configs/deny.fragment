@@ -1,0 +1,32 @@
+# Subsystems EVE does not ship, denied at the top-level menu symbol so that
+# kconfig removes everything beneath them and new drivers added upstream are
+# covered automatically. Applied to hwe and ai only.
+#
+# Measured on 6.18.35 against eve-hwe_defconfig: 6477 -> 4403 modules,
+# 2218 symbols removed. (Superseded from the original 4434/2181: fix round 1
+# added the CONFIG_RC_CORE denial below, which was not reflected in the
+# commit message that introduced this file.)
+#
+# Deliberately retained, so nobody re-litigates them:
+#   drivers/net/wireless  13.4 MB - core ships only 27 wireless symbols with
+#                         no mt76, rtw88/rtw89 or ath11k/ath12k, so no modern
+#                         Wi-Fi 6/6E card works today. Best enablement gain
+#                         in the tree.
+#   drivers/hwmon         2.2 MB  - this is EVE's health-reporting path
+#                         (coretemp, it87, nct6775).
+#   drivers/net/ethernet  11.8 MB
+#   drivers/infiniband    3.1 MB, 2% of the tree; datacenter use is plausible
+#                         and the cost is a rounding error.
+
+# CONFIG_SOUND is not set
+# CONFIG_MEDIA_SUPPORT is not set
+# CONFIG_MEDIA_CEC_SUPPORT is not set
+# CONFIG_COMEDI is not set
+# CONFIG_STAGING is not set
+# CONFIG_IIO is not set
+# RC_CORE (drivers/media/rc/Kconfig) is its own menuconfig, "depends on
+# INPUT", sourced outside the "if MEDIA_SUPPORT" block - so denying
+# MEDIA_SUPPORT above never reaches it, even though DENIED_PREFIXES
+# flags drivers/media/ underneath it. Denied explicitly here for the
+# same reason as the six lines above: a top-level menu symbol, not a leaf.
+# CONFIG_RC_CORE is not set
