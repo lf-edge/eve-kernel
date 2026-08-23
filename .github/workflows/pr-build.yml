@@ -1,0 +1,62 @@
+name: PR Build
+
+on: # yamllint disable-line rule:truthy
+    pull_request:
+        branches:
+            - "gha-test-rebase"
+            - "eve-kernel-*"
+        paths-ignore:
+            - ".github/**"
+
+concurrency:
+    group: pr-build-${{ github.event.pull_request.number }}
+    cancel-in-progress: true
+
+jobs:
+    build:
+        strategy:
+            matrix:
+                flavor: [core, rt, hwe, ai]
+            fail-fast: false
+            max-parallel: 3
+
+        runs-on: [runner-xl, X64, Linux]
+
+        steps:
+            - name: Set sanitized branch name
+              id: branch-setter
+              run: |
+                  BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+                  SAFE_BRANCH="${BRANCH_NAME//\//-}"
+                  echo "SAFE_BRANCH=$SAFE_BRANCH" >> $GITHUB_ENV
+            - name: Checkout PR code
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  repository: ${{ github.event.pull_request.head.repo.full_name }}
+                  fetch-depth: 1
+
+            - name: Build kernel flavor ${{ matrix.flavor }}
+              run: |
+                  make -f Makefile.eve \
+                    KERNEL_CONFIG_FLAVOR=${{ matrix.flavor }} \
+                    BRANCH=$SAFE_BRANCH \
+                    kernel-gcc
+
+            - name: Clean
+              if: always()
+              run: |
+                  make -f Makefile.eve \
+                    KERNEL_CONFIG_FLAVOR=${{ matrix.flavor }} \
+                    BRANCH=$SAFE_BRANCH \
+                    clean-gcc
+                  if docker ps -q -f name=linuxkit-builder | grep -q .; then
+                      echo "=== BuildKit disk usage before prune ==="
+                      docker exec linuxkit-builder buildctl du | tail -n 2
+                      echo "=== Reclaiming ==="
+                      docker exec linuxkit-builder buildctl prune --keep-storage "${BUILDKIT_KEEP_STORAGE_MB:-32000}" | tail -n 1
+                      echo "=== BuildKit disk usage after prune ==="
+                      docker exec linuxkit-builder buildctl du | tail -n 2
+                  else
+                      echo "linuxkit-builder container not running; skipping BuildKit cleanup."
+                  fi
