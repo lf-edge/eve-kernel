@@ -1,0 +1,116 @@
+# Boot-path drivers, built in because EVE has no initramfs: /boot holds only
+# kernel, cmdline, ucode.img and xen.gz, so anything needed to reach the root
+# filesystem cannot be a module. Applied to hwe and ai only - core keeps its
+# own smaller set in eve/policy/core-boot-path, because it has ~4.9 MiB of
+# headroom under the 290 MiB cap and targets known hardware.
+#
+# Qualification rule for additions: a symbol belongs here if it can host the
+# root filesystem on hardware EVE is deployed to or expects to be deployed
+# to. Review additions against that sentence.
+#
+# Measured cost of the full list: 3.0 MB raw, ~0.6 MB compressed.
+#
+# Note MEGARAID_SAS is =y in eve-core_defconfig and was =m in eve-hwe: the
+# Ubuntu derivation downgraded a driver core had built in.
+
+CONFIG_MEGARAID_SAS=y
+CONFIG_SCSI_MPI3MR=y
+CONFIG_SCSI_SAS_LIBSAS=y
+CONFIG_SCSI_AACRAID=y
+CONFIG_SCSI_ISCI=y
+# RPMB=y is required for MMC_BLOCK=y to take effect: drivers/mmc/core/Kconfig
+# declares MMC_BLOCK "depends on RPMB || !RPMB", and under tristate OR
+# semantics (max, not boolean OR) that expression evaluates to RPMB itself
+# whenever RPMB=m, capping MMC_BLOCK at =m regardless of this fragment's
+# request. RPMB only depends on MMC (=y here) and nothing else selects it, so
+# raising it to =y is the only way to lift the cap; verified to change only
+# these two symbols.
+CONFIG_RPMB=y
+CONFIG_MMC_BLOCK=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PCI=y
+CONFIG_MMC_SDHCI_ACPI=y
+CONFIG_DM_MIRROR=y
+CONFIG_DM_MULTIPATH=y
+CONFIG_DM_MULTIPATH_QL=y
+CONFIG_DM_MULTIPATH_ST=y
+CONFIG_MD_LINEAR=y
+# hv_storvsc hosts the root filesystem on a Hyper-V/Azure guest, and EVE has
+# no initramfs. Moved here from common.fragment (was =m there) so the
+# fragments stay disjoint; the surrounding Hyper-V block otherwise stays in
+# common.fragment.
+#
+# HYPERV_STORAGE=y alone does not take effect: drivers/scsi/Kconfig:593 has
+# "depends on m || SCSI_FC_ATTRS != m", a standard kconfig idiom to stop a
+# built-in from linking against a modular symbol. With CONFIG_SCSI_FC_ATTRS=m
+# that clause itself evaluates to m, capping HYPERV_STORAGE at =m the same
+# way RPMB capped MMC_BLOCK above. SCSI_FC_ATTRS only gates its own sysfs
+# attribute export (BLK_DEV_BSGLIB, SCSI_NETLINK); raising it to =y is the
+# only direction that both lifts the cap and keeps the existing FC modules
+# (qla2xxx, elx, csiostor, message/fusion) working. Verified to change only
+# these two symbols.
+CONFIG_SCSI_FC_ATTRS=y
+CONFIG_HYPERV_STORAGE=y
+
+# --- from commit e6a28f4e19f0, "build the storage stack into eve-hwe, not as
+# --- modules". Derived from the eve-delta.fragment (base defconfig vs HEAD),
+# --- not hand-transcribed: includes the explicit =y promotions for
+# --- BLK_DEV_NVME, SATA_AHCI and 9 legacy SATA controllers, SCSI_HPSA,
+# --- SCSI_SMARTPQI, SCSI_MPT3SAS, BLK_DEV_NBD, BLK_DEV_RAM,
+# --- XEN_BLKDEV_BACKEND, DM_SNAPSHOT/THIN_PROVISIONING/RAID/VERITY,
+# --- USB_STORAGE/USB_UAS, MMC_SDHCI*, OVERLAY_FS, ISO9660_FS, MSDOS_FS,
+# --- SQUASHFS_4K_DEVBLK_SIZE/EMBEDDED, CRYPTO_AES_NI_INTEL - plus the
+# --- dependent symbols that promotion pulls in when resolved (async_tx/
+# --- MD/DM helpers, NVMe auth/keyring, SCSI SAS attrs, RAID6 helpers).
+CONFIG_ASYNC_CORE=y
+CONFIG_ASYNC_MEMCPY=y
+CONFIG_ASYNC_PQ=y
+CONFIG_ASYNC_RAID6_RECOV=y
+CONFIG_ASYNC_XOR=y
+CONFIG_BLK_DEV_NBD=y
+CONFIG_BLK_DEV_NVME=y
+CONFIG_BLK_DEV_RAM=y
+CONFIG_CRYPTO_AES_NI_INTEL=y
+CONFIG_CRYPTO_HKDF=y
+CONFIG_DM_BIO_PRISON=y
+CONFIG_DM_BUFIO=y
+CONFIG_DM_PERSISTENT_DATA=y
+CONFIG_DM_RAID=y
+CONFIG_DM_SNAPSHOT=y
+CONFIG_DM_THIN_PROVISIONING=y
+CONFIG_DM_VERITY=y
+CONFIG_ISO9660_FS=y
+CONFIG_MD_RAID0=y
+CONFIG_MD_RAID1=y
+CONFIG_MD_RAID10=y
+CONFIG_MD_RAID456=y
+CONFIG_MMC_CQHCI=y
+CONFIG_MMC_SDHCI_PLTFM=y
+CONFIG_MMC_SDHCI_UHS2=y
+CONFIG_MSDOS_FS=y
+CONFIG_NVME_AUTH=y
+CONFIG_NVME_CORE=y
+CONFIG_NVME_KEYRING=y
+CONFIG_OVERLAY_FS=y
+CONFIG_RAID6_PQ=y
+CONFIG_RAID_ATTRS=y
+CONFIG_SATA_AHCI=y
+CONFIG_SATA_MV=y
+CONFIG_SATA_NV=y
+CONFIG_SATA_PROMISE=y
+CONFIG_SATA_SIL=y
+CONFIG_SATA_SIS=y
+CONFIG_SATA_SVW=y
+CONFIG_SATA_ULI=y
+CONFIG_SATA_VIA=y
+CONFIG_SATA_VITESSE=y
+CONFIG_SCSI_HPSA=y
+CONFIG_SCSI_MPT3SAS=y
+CONFIG_SCSI_SAS_ATTRS=y
+CONFIG_SCSI_SMARTPQI=y
+CONFIG_SQUASHFS_4K_DEVBLK_SIZE=y
+CONFIG_SQUASHFS_EMBEDDED=y
+CONFIG_USB_STORAGE=y
+CONFIG_USB_UAS=y
+CONFIG_XEN_BLKDEV_BACKEND=y
+CONFIG_XOR_BLOCKS=y

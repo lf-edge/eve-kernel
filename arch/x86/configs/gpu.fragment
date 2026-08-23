@@ -1,0 +1,38 @@
+# GPU DRM drivers for the graphical console (EVE pkg/monitor).
+#
+# common.fragment turns the DRM core on but leaves every real GPU driver
+# off, so a flavour without this fragment gets simpledrm on the EFI
+# framebuffer and nothing else. pkg/monitor draws through DRM/KMS and needs
+# a driver that owns the display engine; simpledrm gives a fixed-mode
+# scanout with no modesetting, no page flip and no dmabuf import.
+#
+# Applied after common.fragment and overrides it. check-config.py reports
+# the overlap as an advisory naming this file as the winner - that is the
+# intended layering, the same way rt.fragment overrides common.fragment.
+#
+# core and hwe both take it; rt does not. Kept out of common.fragment so
+# that dropping it is a one-word edit to Makefile.eve.
+#
+# Does not re-enable AMDGPU, NOUVEAU or RADEON: eve-hwe_defconfig asks for
+# those as =m, but common.fragment turns them off for every flavour and
+# nothing here overrides that.
+
+# Both Intel drivers are built. Which one binds is a runtime choice via
+# i915.force_probe= / xe.force_probe= on the kernel command line, not a
+# build-time one. xe is needed because i915 has no SR-IOV support.
+#
+# =m, not =y, for xe: DRM_XE_DISPLAY depends on DRM_XE=m
+# (drivers/gpu/drm/xe/Kconfig), so a built-in xe has no display engine and
+# would leave the console dark on any device it claims. i915 follows =m for
+# symmetry; both autoload via pkg/udev, which is in the rootfs.
+CONFIG_DRM_I915=m
+CONFIG_DRM_XE=m
+CONFIG_DRM_XE_DISPLAY=y
+
+# virtio-gpu so EVE under QEMU (make run-live) also gets a /dev/dri.
+CONFIG_DRM_VIRTIO_GPU=m
+
+# Keeps the text consoles alive once i915/xe takes the display over from
+# simpledrm. Without it the handover leaves a blank screen on any failure
+# path that falls back to the TUI.
+CONFIG_DRM_FBDEV_EMULATION=y
