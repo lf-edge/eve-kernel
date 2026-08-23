@@ -1,0 +1,9 @@
+# Accepted behavioural differences between eve-core_defconfig and other
+# flavours. One symbol per line, followed by the reason it is acceptable.
+#
+# A symbol belongs here only when the divergence is deliberate. If you are
+# adding an entry because a check failed and you are not sure why, the right
+# move is to fix the config, not to record the difference.
+#
+# This file is populated by the triage in Task 13. Until then the parity
+# check runs advisory (see --advisory-parity in check-config.py).

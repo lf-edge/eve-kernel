@@ -1,0 +1,36 @@
+# Symbols permitted to survive a denial because something we deliberately
+# retain select's them. kconfig refuses to produce an inconsistent config,
+# so these are correct behaviour, not failures.
+#
+# Verified against 6.18.35 with deny.fragment applied to eve-hwe_defconfig:
+# 544 of 550 requested denials held; these six did not.
+#
+# CEC_CORE added in fix round 1: a seventh, unrelated survivor found once
+# deny.fragment also denied RC_CORE (drivers/media/rc) - 36 of the 37
+# newly-checked drivers/media/ symbols cleared, this one did not.
+#
+# This list is reused generically by check_fragment_values for the same
+# reason: a fragment's requested value can fail to hold not because the
+# fragment was wrong, but because a *later* fragment in the same flavour's
+# list correctly disabled one of its Kconfig dependencies. kconfig forces
+# the dependent off; that is correct layering, not a bug in either
+# fragment.
+#
+# XEN_PVCALLS_BACKEND is NOT here: it depends on XEN, which rt.fragment
+# disables, but this file is global to every flavour, and hwe/ai must keep
+# XEN_PVCALLS_BACKEND=y. The fix lives in rt.fragment instead, which now
+# states the consequence explicitly (`# CONFIG_XEN_PVCALLS_BACKEND is not
+# set`) so check_fragment_values's last-mention-wins logic can see the
+# override without this file blinding every other flavour to it.
+#
+# Contrast with rt.fragment's own CONFIG_PM request, which fails for
+# unrelated reasons (kernel/power/Kconfig's PM_SLEEP def_bool) and is a
+# genuine bug fixed elsewhere - it must NOT be added here.
+
+AD5592R_BASE            select'd by AD5593R, retained on core
+HTS221_I2C              select'd by HTS221
+HTS221_SPI              select'd by HTS221
+HID_SENSOR_IIO_COMMON   select'd by retained HID sensor drivers
+HID_SENSOR_IIO_TRIGGER  select'd by retained HID sensor drivers
+IIO_BUFFER_CB           select'd by a retained consumer
+CEC_CORE                select'd by retained DRM_DISPLAY_HELPER=m and DRM_I2C_NXP_TDA998X=m
