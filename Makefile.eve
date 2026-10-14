@@ -22,9 +22,27 @@ LINUXKIT_SOURCE  ?= https://github.com/linuxkit/linuxkit
 # downloading a release binary.  LINUXKIT_GIT_REF must be a commit hash
 # (reproducible, no network call at parse time).
 # Update the hash by running: git ls-remote https://github.com/linuxkit/linuxkit master
-# Leave LINUXKIT_GIT_URL unset (default) to use the release binary.
-LINUXKIT_GIT_URL ?= https://github.com/linuxkit/linuxkit
-LINUXKIT_GIT_REF ?= 3bf33c3a11fc20b459195294a7d8980cbca4195b
+# Temporarily pinned to a fork carrying `pkg build --secret` until it lands
+# upstream: https://github.com/linuxkit/linuxkit/pull/4223
+LINUXKIT_GIT_URL ?= https://github.com/europaul/linuxkit
+LINUXKIT_GIT_REF ?= 1e4188b7efffddcaac5faa09c6f583161ae281ba
+# Optional local source tree — takes priority over LINUXKIT_GIT_URL.
+#   make LINUXKIT_SRC=/path/to/linuxkit <target>
+LINUXKIT_SRC ?=
+
+# buildkit fetches Dockerfile `ADD <git url>` sources (and their submodules)
+# itself, ignoring gitconfig and GIT_ASKPASS, so they stay anonymous and GitHub
+# intermittently refuses them. If GITHUB_TOKEN is set, hand it to buildkit as
+# its github.com git auth secret. Only the linuxkit pinned by LINUXKIT_GIT_REF
+# is known to support `pkg build --secret`, so skip it otherwise.
+ifneq ($(and $(GITHUB_TOKEN),$(LINUXKIT_GIT_URL)),)
+LINUXKIT_SECRET_OPTS=--secret id=GIT_AUTH_TOKEN.github.com,env=GITHUB_TOKEN
+endif
+
+# We set a name for Linuxkit's builder container so it doesn't clash with an
+# eventual EVE build running on the same system
+LINUXKIT_BUILDER_NAME ?= linuxkit-builder-kernel-$(USER)
+export LINUXKIT_BUILDER_NAME
 
 ifneq ($(LINUXKIT_GIT_URL),)
 _LK_VERSION := $(shell printf '%s' '$(LINUXKIT_GIT_REF)' | cut -c1-12)
@@ -101,6 +119,7 @@ kernel-build-%: Makefile.eve $(LK)
 	  --platforms linux/$(ARCHITECTURE) \
 	  --tag $(BRANCH)-$(VERSION)$(DIRTY)-$* \
 	  --build-arg-file $(KERNEL_BUILD_ARGS_FILE) \
+	  $(LINUXKIT_SECRET_OPTS) \
 	  .
 	@rm -f $(KERNEL_BUILD_ARGS_FILE)
 
