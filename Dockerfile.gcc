@@ -11,6 +11,42 @@ ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
 ARG LOCALVERSION
 
+# The NVIDIA debs, for the ai flavour only. The NVIDIA payload is ~117 MB (105 MB
+# GSP firmware + 12 MB out-of-tree modules); for core, which must fit a 290 MiB
+# rootfs with ~4.9 MiB of headroom, that is roughly 20x the entire budget.
+# KERNEL_FLAVOUR picks one of the stages below and BuildKit fetches only that
+# one, so every other flavour mounts an empty stage and builds no NVIDIA.
+#
+# Ubuntu's archive rather than NVIDIA's own repo, because it is internally
+# consistent: kernel module source, userland, nvidia-smi and firmware all exist at
+# one version, and NVIDIA pins them to each other with exact equality. NVIDIA's
+# repo ships a newer libnvidia-compute but a transitional, empty nvidia-utils, so
+# a matching nvidia-smi is not obtainable there. The userland ships in EVE's
+# pkg/nvidia (ai-generic), so a driver bump updates both at the same version.
+#
+# Fetched by file name from Launchpad, not from the archive pool: the pool keeps
+# only the current version of each package and deletes superseded ones, while
+# Launchpad serves every published version. ADD verifies each checksum.
+#
+# UPSTREAM is the bare driver version, which Ubuntu embeds in the firmware package
+# NAME as well as its version. VERSION is the full Debian package version.
+# Kernel compatibility is decided by the release's conftest.sh probes, not the branch:
+# 580.65.06 knows kernel APIs only up to 6.15, 580.173.02 probes 6.17/6.18/6.19.
+FROM scratch AS nvidia-debs-core
+FROM scratch AS nvidia-debs-rt
+FROM scratch AS nvidia-debs-hwe
+FROM scratch AS nvidia-debs-ai
+ARG NVIDIA_DRIVER_BRANCH=580
+ARG NVIDIA_DRIVER_UPSTREAM=580.173.02
+ARG NVIDIA_DRIVER_VERSION=580.173.02-0ubuntu0.24.04.1
+ADD --checksum=sha256:38a902357cafdbb3639cc3908978c7cac1897478a9170b8e56acea91da2ef16f \
+    https://launchpad.net/ubuntu/+archive/primary/+files/nvidia-kernel-source-${NVIDIA_DRIVER_BRANCH}-open_${NVIDIA_DRIVER_VERSION}_amd64.deb \
+    /nvidia-kernel-source.deb
+ADD --checksum=sha256:7dcf939ece48abb2b19af80887aab93e04ba4c515e5b3563ff224f2df87cedc8 \
+    https://launchpad.net/ubuntu/+archive/primary/+files/nvidia-firmware-${NVIDIA_DRIVER_BRANCH}-${NVIDIA_DRIVER_UPSTREAM}_${NVIDIA_DRIVER_VERSION}_amd64.deb \
+    /nvidia-firmware.deb
+FROM nvidia-debs-${KERNEL_FLAVOUR} AS nvidia-debs
+
 FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
 RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
     binutils \
@@ -215,30 +251,19 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=hailo-ccache-${TARGETARCH} 
 #
 # The NVIDIA user-space half (libcuda/NVML, ~500MB) is NOT here - it needs no
 # signature and ships as a separate EVE package staged to /opt/vendor/nvidia. Both
-# halves and the GSP firmware are pinned by NVIDIA to the exact same version, so
-# both must be sourced at NVIDIA_DRIVER_VERSION from this same Ubuntu pool.
+# halves and the GSP firmware are pinned by NVIDIA to the exact same version;
+# the nvidia-debs stage above carries the debs for the ai flavour.
 #
-# Ubuntu's archive rather than NVIDIA's own repo, because it is internally
-# consistent: kernel module source, userland, nvidia-smi and firmware all exist at
-# one version. NVIDIA's repo ships a newer libnvidia-compute but a transitional,
-# empty nvidia-utils, so a matching nvidia-smi is not obtainable there.
-#
-# amd64 only. Empty NVIDIA_DRIVER_VERSION (the default) skips the whole step.
-ARG NVIDIA_DRIVER_BRANCH=580
-ARG NVIDIA_DRIVER_UPSTREAM=
-ARG NVIDIA_DRIVER_VERSION=
-ARG NVIDIA_DEB_POOL=http://archive.ubuntu.com/ubuntu/pool/restricted/n
+# Runs only when the nvidia-debs stage carries the module source deb.
 RUN --mount=type=cache,target=/root/.cache/ccache,id=nvidia-ccache-${TARGETARCH} \
-    if [ -n "${NVIDIA_DRIVER_VERSION}" ] && [ "${TARGETARCH}" = "amd64" ]; then \
+    --mount=type=bind,from=nvidia-debs,target=/nvidia-debs \
+    if [ -e /nvidia-debs/nvidia-kernel-source.deb ]; then \
       set -e; \
-      pool="${NVIDIA_DEB_POOL}/nvidia-graphics-drivers-${NVIDIA_DRIVER_BRANCH}"; \
-      deb="nvidia-kernel-source-${NVIDIA_DRIVER_BRANCH}-open_${NVIDIA_DRIVER_VERSION}_amd64.deb"; \
-      echo "Fetching ${deb}"; \
-      curl -fsSL -o /tmp/nv.deb "${pool}/${deb}"; \
-      data=$(ar t /tmp/nv.deb | grep '^data\.tar'); \
+      deb=/nvidia-debs/nvidia-kernel-source.deb; \
+      data=$(ar t "$deb" | grep '^data\.tar'); \
       case "$data" in \
-        *.zst) ar p /tmp/nv.deb "$data" | zstd -dc | tar -x -C / ;; \
-        *.xz)  ar p /tmp/nv.deb "$data" | xz -dc   | tar -x -C / ;; \
+        *.zst) ar p "$deb" "$data" | zstd -dc | tar -x -C / ;; \
+        *.xz)  ar p "$deb" "$data" | xz -dc   | tar -x -C / ;; \
         *)     echo "unhandled deb payload: $data"; exit 1 ;; \
       esac; \
       nvsrc=$(echo /usr/src/nvidia-*); \
@@ -260,20 +285,17 @@ RUN --mount=type=cache,target=/root/.cache/ccache,id=nvidia-ccache-${TARGETARCH}
 
 # NVIDIA GSP firmware. Must live in /lib/firmware because the in-kernel firmware
 # loader resolves paths in the host mount namespace and cannot see /opt/vendor.
-# Version-locked to the kernel modules above, hence the same version arg. Note
-# Ubuntu puts the upstream version inside the package name as well as in the
-# package version.
-RUN if [ -n "${NVIDIA_DRIVER_VERSION}" ] && [ -n "${NVIDIA_DRIVER_UPSTREAM}" ] && [ "${TARGETARCH}" = "amd64" ]; then \
+# Version-locked to the kernel modules above: both debs come from the
+# nvidia-debs stage.
+RUN --mount=type=bind,from=nvidia-debs,target=/nvidia-debs \
+    if [ -e /nvidia-debs/nvidia-firmware.deb ]; then \
       set -e; \
-      pool="${NVIDIA_DEB_POOL}/nvidia-graphics-drivers-${NVIDIA_DRIVER_BRANCH}"; \
-      deb="nvidia-firmware-${NVIDIA_DRIVER_BRANCH}-${NVIDIA_DRIVER_UPSTREAM}_${NVIDIA_DRIVER_VERSION}_amd64.deb"; \
-      echo "Fetching ${deb}"; \
-      curl -fsSL -o /tmp/nvfw.deb "${pool}/${deb}"; \
-      data=$(ar t /tmp/nvfw.deb | grep '^data\.tar'); \
+      deb=/nvidia-debs/nvidia-firmware.deb; \
+      data=$(ar t "$deb" | grep '^data\.tar'); \
       mkdir -p /tmp/nvfw; \
       case "$data" in \
-        *.zst) ar p /tmp/nvfw.deb "$data" | zstd -dc | tar -x -C /tmp/nvfw ;; \
-        *.xz)  ar p /tmp/nvfw.deb "$data" | xz -dc   | tar -x -C /tmp/nvfw ;; \
+        *.zst) ar p "$deb" "$data" | zstd -dc | tar -x -C /tmp/nvfw ;; \
+        *.xz)  ar p "$deb" "$data" | xz -dc   | tar -x -C /tmp/nvfw ;; \
         *)     echo "unhandled deb payload: $data"; exit 1 ;; \
       esac; \
       mkdir -p /tmp/kernel-modules/lib/firmware; \

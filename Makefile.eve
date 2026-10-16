@@ -9,9 +9,10 @@ ARCHITECTURE=amd64
 KERNEL_TAG=v6.18.63
 PLATFORM=linux/$(ARCHITECTURE)
 
-# Flavour resolution. Each flavour resolves to four independent facts: a base
-# defconfig, an ordered fragment list, whether the RT patch is applied, and
-# whether the NVIDIA out-of-tree drivers are built.
+# Flavour resolution. Each flavour resolves to three independent facts: a base
+# defconfig, an ordered fragment list and whether the RT patch is applied.
+# Dockerfile.gcc adds the NVIDIA out-of-tree drivers to ai, keyed on
+# KERNEL_FLAVOUR.
 #
 # Fragments apply in list order and a later one may deliberately override an
 # earlier one: gpu.fragment re-enables GPU drivers that common.fragment turns
@@ -37,31 +38,6 @@ FRAGMENTS_ai   := $(FRAGMENTS_hwe)
 
 APPLY_RT_PATCH_rt := 1
 
-# NVIDIA is defined ONLY for the ai flavour. Deliberately not a global default
-# with a later override: make gives command-line assignments precedence over
-# everything but `override`, so `make KERNEL_CONFIG_FLAVOR=core
-# NVIDIA_DRIVER_VERSION=...` would defeat a blank-it-afterwards approach and
-# build core with the NVIDIA payload. Defining it per-flavour removes the hole
-# instead of patching it.
-#
-# The payload is ~117 MB (105 MB GSP firmware + 12 MB out-of-tree modules).
-# For core, which must fit a 290 MiB rootfs with ~4.9 MiB of headroom, that is
-# roughly 20x the entire budget. It was a global default because when NVIDIA
-# was added (ae77c5c28688) this branch had one flavour and one defconfig, so
-# "always" and "for ai" were the same statement. They no longer are.
-#
-# Sourced from Ubuntu's archive, not NVIDIA's own repo, so that the kernel module,
-# the userland shipped by EVE's nvidia-dgpu package, nvidia-smi and the GSP firmware
-# all exist at one version - NVIDIA pins them to each other with exact equality.
-#
-# UPSTREAM is the bare driver version, which Ubuntu embeds in the firmware package
-# NAME as well as its version. VERSION is the full Debian package version.
-# Kernel compatibility is decided by the release's conftest.sh probes, not the branch:
-# 580.65.06 knows kernel APIs only up to 6.15, 580.173.02 probes 6.17/6.18/6.19.
-NVIDIA_DRIVER_BRANCH_ai   := 580
-NVIDIA_DRIVER_UPSTREAM_ai := 580.173.02
-NVIDIA_DRIVER_VERSION_ai  := 580.173.02-0ubuntu0.24.04.1
-
 BASE_DEFCONFIG := $(BASE_DEFCONFIG_$(KERNEL_CONFIG_FLAVOR))
 KERNEL_FRAGMENTS := $(FRAGMENTS_$(KERNEL_CONFIG_FLAVOR))
 APPLY_RT_PATCH := $(APPLY_RT_PATCH_$(KERNEL_CONFIG_FLAVOR))
@@ -69,13 +45,6 @@ APPLY_RT_PATCH := $(APPLY_RT_PATCH_$(KERNEL_CONFIG_FLAVOR))
 ifeq ($(BASE_DEFCONFIG),)
 $(error Unknown KERNEL_CONFIG_FLAVOR '$(KERNEL_CONFIG_FLAVOR)'; expected core, rt, hwe or ai)
 endif
-
-# NVIDIA is defined ONLY for ai (see table above); for core, rt and hwe these
-# expand empty, which Dockerfile.gcc treats as "build no NVIDIA modules". No
-# ?=, no global default, nothing for a command-line assignment to latch onto.
-NVIDIA_DRIVER_BRANCH   := $(NVIDIA_DRIVER_BRANCH_$(KERNEL_CONFIG_FLAVOR))
-NVIDIA_DRIVER_UPSTREAM := $(NVIDIA_DRIVER_UPSTREAM_$(KERNEL_CONFIG_FLAVOR))
-NVIDIA_DRIVER_VERSION  := $(NVIDIA_DRIVER_VERSION_$(KERNEL_CONFIG_FLAVOR))
 
 BUILD_USER:=$(shell id -un)
 
@@ -242,12 +211,11 @@ KERNEL_BUILD_ARGS_FILE := $(shell mktemp -u)-kernel-build-args
 
 kernel-build-%: Makefile.eve $(LK)
 	@echo "Building kernel version $(BRANCH):$(KERNEL_CONFIG_FLAVOR)-$(VERSION)-$* with compiler $*"
-	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nBASE_DEFCONFIG=%s\nKERNEL_FRAGMENTS=%s\nAPPLY_RT_PATCH=%s\nRT_SERIES_URL=%s\nKERNEL_FLAVOUR=%s\nNVIDIA_DRIVER_BRANCH=%s\nNVIDIA_DRIVER_UPSTREAM=%s\nNVIDIA_DRIVER_VERSION=%s\n' \
+	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nBASE_DEFCONFIG=%s\nKERNEL_FRAGMENTS=%s\nAPPLY_RT_PATCH=%s\nRT_SERIES_URL=%s\nKERNEL_FLAVOUR=%s\n' \
 	  '$(SOURCE_DATE_EPOCH)' '$(KBUILD_BUILD_TIMESTAMP)' \
 	  '$(KERNEL_CONFIG_FLAVOR)-$(VERSION)$(DIRTY)' \
 	  '$(BASE_DEFCONFIG)' '$(KERNEL_FRAGMENTS)' '$(APPLY_RT_PATCH)' '$(RT_SERIES_URL)' \
 	  '$(KERNEL_CONFIG_FLAVOR)' \
-	  '$(NVIDIA_DRIVER_BRANCH)' '$(NVIDIA_DRIVER_UPSTREAM)' '$(NVIDIA_DRIVER_VERSION)' \
 	  > $(KERNEL_BUILD_ARGS_FILE)
 	$(LK) pkg build \
 	  --force \
