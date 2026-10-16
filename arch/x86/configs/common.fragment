@@ -82,14 +82,17 @@ CONFIG_SYSTEM_REVOCATION_LIST=y
 # which turned this driver off deliberately. Was commit bf841829cf73.
 # CONFIG_INTEL_PCH_THERMAL is not set
 
-# Kontron PLD. The upstream driver exists in 6.18 but is too minimal to work on
-# real Kontron hardware, and EVE's patched version is not ported to this branch
-# yet. Disabled here rather than by editing the defconfig, so re-enabling it when
-# working drivers land is deleting these four lines. Was commit 080ede291e77.
-# CONFIG_MFD_KEMPLD is not set
-# CONFIG_I2C_KEMPLD is not set
-# CONFIG_GPIO_KEMPLD is not set
-# CONFIG_KEMPLD_WDT is not set
+# Kontron PLD, backed by the vendor kempld38 driver package rather than the
+# minimal upstream driver. Values match the 6.12 branch. The watchdog is built
+# in because the kernel gives the legacy /dev/watchdog node, which EVE's
+# watchdog service uses, to the first watchdog registered. Built in, it
+# registers before iTCO_wdt and the other modular watchdogs, so on Kontron
+# boards /dev/watchdog is reliably the PLD. The core must be built in for the
+# watchdog to be.
+CONFIG_MFD_KEMPLD=y
+CONFIG_KEMPLD_WDT=y
+CONFIG_I2C_KEMPLD=m
+CONFIG_GPIO_KEMPLD=m
 
 # Overlayfs. EVE's lower layers are squashfs, which has no UUID, so
 # XINO_AUTO's inode-number mapping attempt just logs "null uuid detected"
