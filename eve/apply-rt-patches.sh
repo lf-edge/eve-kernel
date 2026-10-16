@@ -17,11 +17,13 @@
 # applied. Deciding from the patch's own contents means no hand-maintained
 # skip list to update on the next RT bump.
 #
-# Usage: apply-rt-patches.sh <series-tarball-url> [--revert]
+# Usage: apply-rt-patches.sh <series-tarball> [--revert]
+#
+# <series-tarball> is a local file, or a URL to fetch it from.
 
 set -eu
 
-URL=${1:?usage: apply-rt-patches.sh <series-tarball-url> [--revert]}
+SRC=${1:?usage: apply-rt-patches.sh <series-tarball> [--revert]}
 MODE=${2:-apply}
 
 SKIP_ARCHES='arm|arm64|powerpc|riscv|s390|mips|loongarch|sparc|xtensa|openrisc|parisc|alpha|m68k|sh|csky|hexagon|nios2|microblaze'
@@ -29,11 +31,15 @@ SKIP_ARCHES='arm|arm64|powerpc|riscv|s390|mips|loongarch|sparc|xtensa|openrisc|p
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
 
-echo "Fetching RT series from $URL"
-curl -fsSL "$URL" | tar xz -C "$WORKDIR"
+if [ -f "$SRC" ]; then
+    tar xzf "$SRC" -C "$WORKDIR"
+else
+    echo "Fetching RT series from $SRC"
+    curl -fsSL "$SRC" | tar xz -C "$WORKDIR"
+fi
 
 PDIR="$WORKDIR/patches"
-[ -f "$PDIR/series" ] || { echo "ERROR: no patches/series in $URL" >&2; exit 1; }
+[ -f "$PDIR/series" ] || { echo "ERROR: no patches/series in $SRC" >&2; exit 1; }
 
 # series order, comments and blank lines stripped
 SERIES=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' -e 's/[[:space:]]*$//' "$PDIR/series")

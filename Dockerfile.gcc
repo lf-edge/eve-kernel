@@ -2,8 +2,9 @@
 ARG ALPINE_VERSION=3.22
 ARG BASE_DEFCONFIG=eve-hwe_defconfig
 ARG KERNEL_FRAGMENTS=
-ARG APPLY_RT_PATCH=
+ARG APPLY_RT_PATCH=0
 ARG RT_SERIES_URL=
+ARG RT_SERIES_SHA256=
 ARG KERNEL_FLAVOUR=hwe
 ARG KERNEL_BIN=arch/x86/boot/bzImage
 # set from a Makefile.eve
@@ -46,6 +47,17 @@ ADD --checksum=sha256:7dcf939ece48abb2b19af80887aab93e04ba4c515e5b3563ff224f2df8
     https://launchpad.net/ubuntu/+archive/primary/+files/nvidia-firmware-${NVIDIA_DRIVER_BRANCH}-${NVIDIA_DRIVER_UPSTREAM}_${NVIDIA_DRIVER_VERSION}_amd64.deb \
     /nvidia-firmware.deb
 FROM nvidia-debs-${KERNEL_FLAVOUR} AS nvidia-debs
+
+# The RT patch series tarball, when the flavour applies the RT patch. Its URL and
+# SHA256 sum come from Makefile.eve, which also hands the URL to its local
+# rt-config target, so both are stated in one place. APPLY_RT_PATCH picks one of
+# the stages below and BuildKit fetches only that one.
+FROM scratch AS rt-series-0
+FROM scratch AS rt-series-1
+ARG RT_SERIES_URL
+ARG RT_SERIES_SHA256
+ADD --checksum=sha256:${RT_SERIES_SHA256} ${RT_SERIES_URL} /rt-series.tar.gz
+FROM rt-series-${APPLY_RT_PATCH} AS rt-series
 
 FROM --platform=${BUILDPLATFORM} alpine:${ALPINE_VERSION} as builder-native-base
 RUN apk add make flex bison elfutils-dev openssl-dev findutils diffutils perl ccache gcc libgcc musl-dev \
@@ -128,8 +140,6 @@ ARG SOURCE_DATE_EPOCH
 ARG KBUILD_BUILD_TIMESTAMP
 ARG BASE_DEFCONFIG
 ARG KERNEL_FRAGMENTS
-ARG APPLY_RT_PATCH
-ARG RT_SERIES_URL
 ARG KERNEL_FLAVOUR
 ARG KERNEL_BIN
 ARG LOCALVERSION
@@ -150,11 +160,11 @@ ENV SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}"
 
 RUN make -j$(nproc) mrproper
 
-# Apply the RT patch when the flavour calls for it. The URL comes from
-# Makefile.eve so there is one place it is stated - this file previously
-# hardcoded patch-6.12.43-rt12 while Makefile.eve said 6.12.49-rt13.
-RUN if [ "${APPLY_RT_PATCH}" = "1" ]; then \
-      ./eve/apply-rt-patches.sh "${RT_SERIES_URL}"; \
+# Apply the RT patch series when the flavour calls for it, that is when the
+# rt-series stage carries the tarball.
+RUN --mount=type=bind,from=rt-series,target=/rt-series \
+    if [ -e /rt-series/rt-series.tar.gz ]; then \
+      ./eve/apply-rt-patches.sh /rt-series/rt-series.tar.gz; \
     fi
 
 # Materialize .config: base defconfig, then each fragment in order.

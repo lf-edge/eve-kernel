@@ -40,7 +40,7 @@ APPLY_RT_PATCH_rt := 1
 
 BASE_DEFCONFIG := $(BASE_DEFCONFIG_$(KERNEL_CONFIG_FLAVOR))
 KERNEL_FRAGMENTS := $(FRAGMENTS_$(KERNEL_CONFIG_FLAVOR))
-APPLY_RT_PATCH := $(APPLY_RT_PATCH_$(KERNEL_CONFIG_FLAVOR))
+APPLY_RT_PATCH := $(or $(APPLY_RT_PATCH_$(KERNEL_CONFIG_FLAVOR)),0)
 
 ifeq ($(BASE_DEFCONFIG),)
 $(error Unknown KERNEL_CONFIG_FLAVOR '$(KERNEL_CONFIG_FLAVOR)'; expected core, rt, hwe or ai)
@@ -150,7 +150,15 @@ RT_STAMP          := .rt-merged.stamp
 # in 8250_port.c with fuzz 2) and 8 are skipped as arm/powerpc-only. The rolled-up patch
 # cannot be used here: arch/arm/mm/fault.c is already fixed upstream as of .55, so patch
 # exits non-zero and fails the build over a file amd64 never compiles.
-RT_SERIES_URL     := https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.18/patches-6.18.37-rt6.tar.gz
+#
+# Taken from older/, which keeps every release, the current one included. The
+# top-level directory holds only the latest release and drops the previous one
+# as soon as a new one is published.
+#
+# Dockerfile.gcc fetches the tarball with ADD --checksum against
+# RT_SERIES_SHA256, so a bump of the series updates the sum in the same change.
+RT_SERIES_URL    := https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.18/older/patches-6.18.37-rt6.tar.gz
+RT_SERIES_SHA256  := 7f1172f67ccbf3bc4e2cfc2e38ffae4479d9243c7e34bea9ebbba0f76d0b289d
 RT_PATCH_FILE     := .rt-patch-applied.stamp
 
 .PHONY: rt-config gen-rt-fragment rt-clean
@@ -211,10 +219,11 @@ KERNEL_BUILD_ARGS_FILE := $(shell mktemp -u)-kernel-build-args
 
 kernel-build-%: Makefile.eve $(LK)
 	@echo "Building kernel version $(BRANCH):$(KERNEL_CONFIG_FLAVOR)-$(VERSION)-$* with compiler $*"
-	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nBASE_DEFCONFIG=%s\nKERNEL_FRAGMENTS=%s\nAPPLY_RT_PATCH=%s\nRT_SERIES_URL=%s\nKERNEL_FLAVOUR=%s\n' \
+	@printf 'SOURCE_DATE_EPOCH=%s\nKBUILD_BUILD_TIMESTAMP=%s\nLOCALVERSION=%s\nBASE_DEFCONFIG=%s\nKERNEL_FRAGMENTS=%s\nAPPLY_RT_PATCH=%s\nRT_SERIES_URL=%s\nRT_SERIES_SHA256=%s\nKERNEL_FLAVOUR=%s\n' \
 	  '$(SOURCE_DATE_EPOCH)' '$(KBUILD_BUILD_TIMESTAMP)' \
 	  '$(KERNEL_CONFIG_FLAVOR)-$(VERSION)$(DIRTY)' \
 	  '$(BASE_DEFCONFIG)' '$(KERNEL_FRAGMENTS)' '$(APPLY_RT_PATCH)' '$(RT_SERIES_URL)' \
+	  '$(RT_SERIES_SHA256)' \
 	  '$(KERNEL_CONFIG_FLAVOR)' \
 	  > $(KERNEL_BUILD_ARGS_FILE)
 	$(LK) pkg build \
