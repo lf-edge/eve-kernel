@@ -233,3 +233,8 @@ CONFIG_SIGNED_PE_FILE_VERIFICATION=y
 CONFIG_KEXEC_SIG=y
 CONFIG_KEXEC_SIG_FORCE=y
 CONFIG_KEXEC_BZIMAGE_VERIFY_SIG=y
+
+# efi-pstore built in, not a module: a panic in the initrd (dm-verity root
+# hash rejected) happens before any module loads and must still be recorded.
+CONFIG_PSTORE=y
+CONFIG_EFI_VARS_PSTORE=y
