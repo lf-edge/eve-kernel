@@ -318,6 +318,17 @@ FROM builder as artifacts
 
 WORKDIR /kernel-out
 
+# With KEXEC_SIG_FORCE, kexec loads only a PE-signed kernel. Sign the bzImage
+# with the per-build module-signing key, whose certificate is built in, so the
+# crash kernel loads on images whose kernel carries no db signature.
+RUN if grep -q '^CONFIG_KEXEC_BZIMAGE_VERIFY_SIG=y' .config; then \
+      KEY=/kernel-out/certs/signing_key.pem; \
+      [ -f "$KEY" ] || KEY=/kernel-src/certs/signing_key.pem; \
+      apk add --no-cache sbsigntool && \
+      sbsign --key "$KEY" --cert "$KEY" --output ${KERNEL_BIN}.signed ${KERNEL_BIN} && \
+      mv ${KERNEL_BIN}.signed ${KERNEL_BIN}; \
+    fi
+
 # package artifacts
 RUN mkdir /out && \
     cp ${KERNEL_BIN} /out/kernel && \
