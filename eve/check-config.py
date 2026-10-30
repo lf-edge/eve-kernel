@@ -207,8 +207,8 @@ def check_denylist(config, symbol_map, denied_prefixes, exceptions):
 def check_boot_path(config, boot_symbols):
     """Every boot-path symbol must be built in.
 
-    EVE has no initramfs - /boot holds only kernel, cmdline, ucode.img and
-    xen.gz - so a driver needed to reach the root filesystem cannot be a
+    EVE has no initramfs - /boot holds only kernel, cmdline and ucode.img -
+    so a driver needed to reach the root filesystem cannot be a
     module.
     """
     problems = []
