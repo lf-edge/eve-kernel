@@ -14,14 +14,6 @@ CONFIG_PREEMPT_RT=y
 # CONFIG_SCHED_MC is not set
 CONFIG_VIRT_CPU_ACCOUNTING_GEN=y
 CONFIG_X86_CPU_RESCTRL=y
-# CONFIG_XEN is not set
-# rt disables Xen entirely (above), which is CONFIG_XEN_PVCALLS_BACKEND's
-# Kconfig dependency (drivers/xen/Kconfig). common.fragment requests
-# XEN_PVCALLS_BACKEND=y; stating the consequence explicitly here, rather
-# than relying on kconfig to force it off silently, lets
-# check_fragment_values see rt.fragment as the last (and correct) mention
-# of this symbol instead of reporting an unheld request.
-# CONFIG_XEN_PVCALLS_BACKEND is not set
 CONFIG_CONTEXT_TRACKING_USER=y
 # CONFIG_CONTEXT_TRACKING_USER_FORCE is not set
 CONFIG_PROC_CPU_RESCTRL=y

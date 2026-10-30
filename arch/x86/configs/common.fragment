@@ -126,10 +126,6 @@ CONFIG_HYPERV_VMBUS=y
 # CONFIG_PCI_HYPERV_INTERFACE is not set
 # CONFIG_UIO_HV_GENERIC is not set
 
-# HV=xen guest support, alongside the Hyper-V block above. Was commit
-# bf841829cf73.
-CONFIG_XEN_PVCALLS_BACKEND=y
-
 # Out-of-tree drivers cherry-picked from the 6.12 branch. Both are optional
 # peripheral/platform enablement, not needed to reach the root filesystem,
 # so =m rather than =y: they cost nothing in the boot image and load only

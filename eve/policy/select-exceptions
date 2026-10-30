@@ -16,15 +16,8 @@
 # the dependent off; that is correct layering, not a bug in either
 # fragment.
 #
-# XEN_PVCALLS_BACKEND is NOT here: it depends on XEN, which rt.fragment
-# disables, but this file is global to every flavour, and hwe/ai must keep
-# XEN_PVCALLS_BACKEND=y. The fix lives in rt.fragment instead, which now
-# states the consequence explicitly (`# CONFIG_XEN_PVCALLS_BACKEND is not
-# set`) so check_fragment_values's last-mention-wins logic can see the
-# override without this file blinding every other flavour to it.
-#
-# Contrast with rt.fragment's own CONFIG_PM request, which fails for
-# unrelated reasons (kernel/power/Kconfig's PM_SLEEP def_bool) and is a
+# rt.fragment's own CONFIG_PM request is not a case for this list either:
+# when it fails, the cause is kernel/power/Kconfig's PM_SLEEP def_bool, a
 # genuine bug fixed elsewhere - it must NOT be added here.
 
 AD5592R_BASE            select'd by AD5593R, retained on core

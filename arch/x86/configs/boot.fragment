@@ -1,5 +1,5 @@
 # Boot-path drivers, built in because EVE has no initramfs: /boot holds only
-# kernel, cmdline, ucode.img and xen.gz, so anything needed to reach the root
+# kernel, cmdline and ucode.img, so anything needed to reach the root
 # filesystem cannot be a module. Applied to hwe and ai only - core keeps its
 # own smaller set in eve/policy/core-boot-path, because it has ~4.9 MiB of
 # headroom under the 290 MiB cap and targets known hardware.
@@ -57,7 +57,7 @@ CONFIG_HYPERV_STORAGE=y
 # --- not hand-transcribed: includes the explicit =y promotions for
 # --- BLK_DEV_NVME, SATA_AHCI and 9 legacy SATA controllers, SCSI_HPSA,
 # --- SCSI_SMARTPQI, SCSI_MPT3SAS, BLK_DEV_NBD, BLK_DEV_RAM,
-# --- XEN_BLKDEV_BACKEND, DM_SNAPSHOT/THIN_PROVISIONING/RAID/VERITY,
+# --- DM_SNAPSHOT/THIN_PROVISIONING/RAID/VERITY,
 # --- USB_STORAGE/USB_UAS, MMC_SDHCI*, OVERLAY_FS, ISO9660_FS, MSDOS_FS,
 # --- SQUASHFS_4K_DEVBLK_SIZE/EMBEDDED, CRYPTO_AES_NI_INTEL - plus the
 # --- dependent symbols that promotion pulls in when resolved (async_tx/
@@ -112,5 +112,4 @@ CONFIG_SQUASHFS_4K_DEVBLK_SIZE=y
 CONFIG_SQUASHFS_EMBEDDED=y
 CONFIG_USB_STORAGE=y
 CONFIG_USB_UAS=y
-CONFIG_XEN_BLKDEV_BACKEND=y
 CONFIG_XOR_BLOCKS=y
