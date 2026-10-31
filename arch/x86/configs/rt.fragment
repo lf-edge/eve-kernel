@@ -32,3 +32,8 @@ CONFIG_RCU_NOCB_CPU=y
 CONFIG_RCU_NOCB_CPU_CB_BOOST=y
 # CONFIG_RCU_NOCB_CPU_DEFAULT_ALL is not set
 CONFIG_VIRT_CPU_ACCOUNTING=y
+# EFI_DISABLE_RUNTIME defaults to y under PREEMPT_RT. Secure Boot needs EFI
+# runtime services: the kernel reads db into the .platform keyring that
+# dm-verity root hash and kexec signatures are checked against, and
+# efi-pstore stores panic records in EFI variables.
+# CONFIG_EFI_DISABLE_RUNTIME is not set

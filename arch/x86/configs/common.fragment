@@ -213,3 +213,28 @@ CONFIG_NETFILTER_XT_NAT=y
 CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
 CONFIG_NETFILTER_XT_TARGET_REDIRECT=y
 CONFIG_NETFILTER_XT_TARGET_NETMAP=y
+
+# Secure Boot (two-stage GRUB, db + GPG): dm-verity root hash signatures
+# checked against the platform keyring (UEFI db), lockdown forced to
+# integrity, and kexec limited to signed images. PLATFORM_KEYRING is set
+# explicitly because its default follows the SECONDARY_KEYRING choice.
+# SIGNED_PE_FILE_VERIFICATION is what KEXEC_BZIMAGE_VERIFY_SIG depends on;
+# without a verifier, KEXEC_SIG_FORCE rejects every kexec.
+CONFIG_DM_VERITY=y
+CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG=y
+CONFIG_DM_VERITY_VERIFY_ROOTHASH_SIG_PLATFORM_KEYRING=y
+CONFIG_INTEGRITY_SIGNATURE=y
+CONFIG_INTEGRITY_ASYMMETRIC_KEYS=y
+CONFIG_INTEGRITY_PLATFORM_KEYRING=y
+CONFIG_SECURITY_LOCKDOWN_LSM=y
+CONFIG_SECURITY_LOCKDOWN_LSM_EARLY=y
+CONFIG_LOCK_DOWN_KERNEL_FORCE_INTEGRITY=y
+CONFIG_SIGNED_PE_FILE_VERIFICATION=y
+CONFIG_KEXEC_SIG=y
+CONFIG_KEXEC_SIG_FORCE=y
+CONFIG_KEXEC_BZIMAGE_VERIFY_SIG=y
+
+# efi-pstore built in, not a module: a panic in the initrd (dm-verity root
+# hash rejected) happens before any module loads and must still be recorded.
+CONFIG_PSTORE=y
+CONFIG_EFI_VARS_PSTORE=y
