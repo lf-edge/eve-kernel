@@ -14,7 +14,7 @@ jobs:
     build:
         strategy:
             matrix:
-                flavor: [core, hwe, rt]
+                flavor: [core, hwe]
             fail-fast: false
             max-parallel: 3
 
