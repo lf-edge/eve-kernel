@@ -16,7 +16,7 @@ jobs:
             matrix:
                 flavor: [core, rt, hwe, ai]
             fail-fast: false
-            max-parallel: 3
+            max-parallel: 4
 
         runs-on: [runner-xl, X64, Linux]
 
