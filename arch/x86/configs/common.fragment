@@ -77,6 +77,14 @@ CONFIG_SYSTEM_REVOCATION_LIST=y
 # Was commit e76c6e90a73f.
 # CONFIG_BPF_KPROBE_OVERRIDE is not set
 
+# No IMA on any flavour. EVE loads no IMA policy and nothing reads the
+# measurement list, yet on a Secure Boot host IMA_ARCH_POLICY still installs
+# rules that measure every module and kexec load into PCR 10. core and rt
+# never enabled it; hwe and ai inherited it from the Ubuntu derivation. EVM
+# only protects the xattrs IMA appraisal checks, so it goes with it.
+# CONFIG_IMA is not set
+# CONFIG_EVM is not set
+
 # Hardware/driver exclusions.
 # INTEL_PCH_THERMAL: disabled, honouring ef7ccc4d151c on the 6.12 branch
 # which turned this driver off deliberately. Was commit bf841829cf73.
