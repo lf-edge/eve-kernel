@@ -111,4 +111,17 @@ static inline bool vfio_pci_is_vga(struct pci_dev *pdev)
 	return (pdev->class >> 8) == PCI_CLASS_DISPLAY_VGA;
 }
 
+/*
+ * vfio_pci_has_setup_rom - whether to expose the firmware-provided ROM copy
+ * (pdev->rom) at the ROM BAR of a device that has no ROM BAR resource.
+ * Limited to display devices: platform firmware also hands over legacy PXE
+ * ROMs for NICs without a ROM BAR of their own (e.g. Intel I210), and SeaBIOS
+ * guests crash executing them.
+ */
+static inline bool vfio_pci_has_setup_rom(struct pci_dev *pdev)
+{
+	return pdev->rom && pdev->romlen &&
+	       (pdev->class >> 16) == PCI_BASE_CLASS_DISPLAY;
+}
+
 #endif
