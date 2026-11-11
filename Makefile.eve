@@ -156,8 +156,8 @@ IMAGE_TAG_NO_FLAVOR := $(IMAGE_REPOSITORY):$(BRANCH)-$(VERSION)$(DIRTY)
 RT_BASE_DEFCONFIG := eve-core_defconfig
 RT_FRAGMENT       := arch/x86/configs/rt.fragment
 RT_STAMP          := .rt-merged.stamp
-# RT lags the stable line: 6.18 still has RT patches only for .13, .35 and .37 while
-# stable is at .55, so this is a point-release mismatch and not an officially supported
+# RT lags the stable line: 6.18 has RT series for .13, .35, .37, .56 and .57 while
+# stable is at .63, so this is a point-release mismatch and not an officially supported
 # combination. Re-check when bumping, and prefer an exact-version series if one appears.
 #
 # This is the series tarball, not the rolled-up patch file. eve/apply-rt-patches.sh
@@ -165,10 +165,11 @@ RT_STAMP          := .rt-merged.stamp
 # architecture we do not build, and any the tree already has - see the comment at
 # the top of that script.
 #
-# Measured against 6.18.55: of the 20 patches, 12 apply (several hunks at an offset, one
-# in 8250_port.c with fuzz 2) and 8 are skipped as arm/powerpc-only. The rolled-up patch
-# cannot be used here: arch/arm/mm/fault.c is already fixed upstream as of .55, so patch
-# exits non-zero and fails the build over a file amd64 never compiles.
+# Measured against 6.18.63: of the 20 patches of 6.18.57-rt9, 12 apply cleanly, 7 are
+# skipped as arm/powerpc-only, and 1, printk-Postpone-kthread-startup.patch, is skipped
+# as already in the tree (stable took it in 6.18.59). The rolled-up patch cannot be
+# used here: patch finds that printk hunk already applied and exits non-zero. On
+# 6.18.55 the same happened with 6.18.37-rt6 over arch/arm/mm/fault.c.
 #
 # Taken from older/, which keeps every release, the current one included. The
 # top-level directory holds only the latest release and drops the previous one
@@ -176,8 +177,8 @@ RT_STAMP          := .rt-merged.stamp
 #
 # Dockerfile.gcc fetches the tarball with ADD --checksum against
 # RT_SERIES_SHA256, so a bump of the series updates the sum in the same change.
-RT_SERIES_URL    := https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.18/older/patches-6.18.37-rt6.tar.gz
-RT_SERIES_SHA256  := 7f1172f67ccbf3bc4e2cfc2e38ffae4479d9243c7e34bea9ebbba0f76d0b289d
+RT_SERIES_URL    := https://cdn.kernel.org/pub/linux/kernel/projects/rt/6.18/older/patches-6.18.57-rt9.tar.gz
+RT_SERIES_SHA256  := 4204e80f6a1b5d435ba144833a1abf4aadd1bedab363c6d91d2c0849e4a5c4e1
 RT_PATCH_FILE     := .rt-patch-applied.stamp
 
 .PHONY: rt-config gen-rt-fragment rt-clean
