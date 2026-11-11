@@ -17,6 +17,14 @@
 # applied. Deciding from the patch's own contents means no hand-maintained
 # skip list to update on the next RT bump.
 #
+# A patch the tree already has is skipped too. RT carries fixes that stable
+# then takes in, so a series built for an older point release can contain
+# them: printk-Postpone-kthread-startup.patch came with 6.18.57-rt9 and was
+# in stable from 6.18.59. Such a patch reverses cleanly, with no fuzz; that
+# is the test. A patch that is only partly in the tree still fails the build.
+# The names of the patches skipped this way go to $PRESENT, and --revert
+# leaves them alone: reverting one would take the fix out of the stable tree.
+#
 # Usage: apply-rt-patches.sh <series-tarball> [--revert]
 #
 # <series-tarball> is a local file, or a URL to fetch it from.
@@ -27,6 +35,7 @@ SRC=${1:?usage: apply-rt-patches.sh <series-tarball> [--revert]}
 MODE=${2:-apply}
 
 SKIP_ARCHES='arm|arm64|powerpc|riscv|s390|mips|loongarch|sparc|xtensa|openrisc|parisc|alpha|m68k|sh|csky|hexagon|nios2|microblaze'
+PRESENT=.rt-patches-in-tree
 
 WORKDIR=$(mktemp -d)
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -62,6 +71,7 @@ if [ "$MODE" = "--revert" ]; then
 else
     PATCHARGS="-N"
     VERB="Applying"
+    : > "$PRESENT"
 fi
 
 # Drive the loop from a file, not a pipe: a piped `while` runs in a subshell,
@@ -69,6 +79,7 @@ fi
 printf '%s\n' "$SERIES" > "$WORKDIR/order"
 
 applied=0
+present=0
 skipped=0
 while IFS= read -r name; do
     f="$PDIR/$name"
@@ -79,6 +90,18 @@ while IFS= read -r name; do
     if is_other_arch_only "$f"; then
         echo "  skip (other architectures only): $name"
         skipped=$((skipped + 1))
+        continue
+    fi
+    if [ "$MODE" = "--revert" ]; then
+        if [ -f "$PRESENT" ] && grep -qxF "$name" "$PRESENT"; then
+            echo "  skip (in the tree before the series): $name"
+            present=$((present + 1))
+            continue
+        fi
+    elif patch -p1 --reverse --dry-run --silent --force --fuzz=0 < "$f" >/dev/null 2>&1; then
+        echo "  skip (already in the tree): $name"
+        printf '%s\n' "$name" >> "$PRESENT"
+        present=$((present + 1))
         continue
     fi
     echo "  $VERB $name"
@@ -93,4 +116,7 @@ while IFS= read -r name; do
     applied=$((applied + 1))
 done < "$WORKDIR/order"
 
-echo "RT series: $applied patches $([ "$MODE" = --revert ] && echo reverted || echo applied), $skipped skipped as other-architecture."
+if [ "$MODE" = "--revert" ]; then
+    rm -f "$PRESENT"
+fi
+echo "RT series: $applied patches $([ "$MODE" = --revert ] && echo reverted || echo applied), $present already in the tree, $skipped skipped as other-architecture."

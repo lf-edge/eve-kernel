@@ -161,8 +161,9 @@ RT_STAMP          := .rt-merged.stamp
 # combination. Re-check when bumping, and prefer an exact-version series if one appears.
 #
 # This is the series tarball, not the rolled-up patch file. eve/apply-rt-patches.sh
-# applies the patches one at a time and skips any whose files all live under an
-# architecture we do not build - see the comment at the top of that script.
+# applies the patches one at a time, skips any whose files all live under an
+# architecture we do not build, and any the tree already has - see the comment at
+# the top of that script.
 #
 # Measured against 6.18.55: of the 20 patches, 12 apply (several hunks at an offset, one
 # in 8250_port.c with fuzz 2) and 8 are skipped as arm/powerpc-only. The rolled-up patch
