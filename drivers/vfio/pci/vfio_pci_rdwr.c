@@ -238,7 +238,7 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 
 	if (pci_resource_start(pdev, bar))
 		end = pci_resource_len(pdev, bar);
-	else if (bar == PCI_ROM_RESOURCE && pdev->rom && pdev->romlen)
+	else if (bar == PCI_ROM_RESOURCE && vfio_pci_has_setup_rom(pdev))
 		end = roundup_pow_of_two(pdev->romlen);
 	else
 		return -EINVAL;
