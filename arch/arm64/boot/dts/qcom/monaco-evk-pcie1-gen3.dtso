@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * Limit PCIe1 (M.2 NVMe slot) on the Monaco EVK / IQ-8275-EVK to Gen3.
+ *
+ * At 16 GT/s the link to some NVMe logs a continuous flood of correctable
+ * AER errors (RxErr, BadTLP/BadDLLP, replay timer timeouts); at 8 GT/s
+ * the link is clean.
+ */
+
+/dts-v1/;
+/plugin/;
+
+&pcie1 {
+	max-link-speed = <3>;
+};
