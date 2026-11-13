@@ -150,6 +150,54 @@ class TestFragmentDisjoint(unittest.TestCase):
         self.assertIn("rt.fragment wins", problems[0])
 
 
+class TestSymbolsDeclared(unittest.TestCase):
+    SYMMAP = {
+        "SOUND": "sound",
+        "MEGARAID_SAS": "drivers/scsi/megaraid",
+        "PANIC_ON_OOPS": "kernel",
+    }
+
+    def test_declared_symbols_pass(self):
+        sources = [
+            ("eve-hwe_defconfig", {"PANIC_ON_OOPS": "y"}),
+            ("deny.fragment", {"SOUND": "n"}),
+            ("boot.fragment", {"MEGARAID_SAS": "y"}),
+        ]
+        self.assertEqual(
+            check_config.check_symbols_declared(sources, self.SYMMAP), []
+        )
+
+    def test_undeclared_not_set_request_is_reported(self):
+        # '# CONFIG_X is not set' for a symbol the tree no longer declares
+        # holds trivially, so check_fragment_values cannot see it.
+        sources = [("deny.fragment", {"SOUND": "n", "GONE_UPSTREAM": "n"})]
+        problems = check_config.check_symbols_declared(sources, self.SYMMAP)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("CONFIG_GONE_UPSTREAM", problems[0])
+        self.assertIn("deny.fragment", problems[0])
+
+    def test_undeclared_defconfig_symbol_is_reported(self):
+        # e.g. CRYPTO_VMAC, set by the 6.12 eve-core_defconfig and no
+        # longer declared in 6.18.
+        sources = [("eve-core_defconfig", {"PANIC_ON_OOPS": "y", "CRYPTO_VMAC": "y"})]
+        problems = check_config.check_symbols_declared(sources, self.SYMMAP)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("CONFIG_CRYPTO_VMAC", problems[0])
+        self.assertIn("eve-core_defconfig", problems[0])
+        self.assertIn("sets y", problems[0])
+
+    def test_every_source_naming_the_symbol_is_reported(self):
+        # Each line is a separate stale entry that has to be removed.
+        sources = [
+            ("eve-hwe_defconfig", {"GONE_UPSTREAM": "m"}),
+            ("common.fragment", {"GONE_UPSTREAM": "y"}),
+        ]
+        problems = check_config.check_symbols_declared(sources, self.SYMMAP)
+        self.assertEqual(len(problems), 2)
+        self.assertIn("eve-hwe_defconfig", problems[0])
+        self.assertIn("common.fragment", problems[1])
+
+
 class TestFragmentValues(unittest.TestCase):
     def test_all_requested_values_present(self):
         cfg = {"SOUND": "n", "MEGARAID_SAS": "y"}
@@ -435,6 +483,40 @@ class TestRunChecks(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_undeclared_symbol_fails_the_build(self):
+        rc, out = check_config.run_checks(
+            config={"SOUND": "n", "PANIC_ON_OOPS": "y"},
+            symbol_map=self.SYMMAP,
+            fragments=[("deny.fragment", {"SOUND": "n", "GONE_UPSTREAM": "n"})],
+            exceptions=set(),
+            boot_symbols=set(),
+            core_config={},
+            divergences=set(),
+            deny=False,
+            advisory_parity=False,
+        )
+        self.assertEqual(rc, 1)
+        self.assertIn("FAIL  defconfig and fragment symbols declared", out)
+        self.assertIn("GONE_UPSTREAM", out)
+
+    def test_base_defconfig_symbols_are_checked(self):
+        rc, out = check_config.run_checks(
+            config={"PANIC_ON_OOPS": "y"},
+            symbol_map=self.SYMMAP,
+            fragments=[],
+            exceptions=set(),
+            boot_symbols=set(),
+            core_config={},
+            divergences=set(),
+            deny=False,
+            advisory_parity=False,
+            base_defconfig=("eve-core_defconfig",
+                            {"PANIC_ON_OOPS": "y", "X86_5LEVEL": "n"}),
+        )
+        self.assertEqual(rc, 1)
+        self.assertIn("X86_5LEVEL", out)
+        self.assertIn("eve-core_defconfig", out)
+
     def test_fragment_overlap_is_advisory_not_fatal(self):
         # Overlapping fragments (layering) must not affect the exit code,
         # even though the values genuinely differ across layers - only
@@ -457,6 +539,38 @@ class TestRunChecks(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertIn("ADVISORY", out)
         self.assertIn("SOUND", out)
+
+
+class TestMain(unittest.TestCase):
+    def _tree(self, d, defconfig_text):
+        write(os.path.join(d, "kernel", "Kconfig"),
+              "config PANIC_ON_OOPS\n\tbool\n")
+        write(os.path.join(d, "eve-core_defconfig"), defconfig_text)
+        write(os.path.join(d, ".config"), "CONFIG_PANIC_ON_OOPS=y\n")
+        return [
+            "--tree-root", d,
+            "--config", os.path.join(d, ".config"),
+            "--flavour", "core",
+            "--core-defconfig", os.path.join(d, "eve-core_defconfig"),
+        ]
+
+    def test_base_defconfig_undeclared_symbol_fails(self):
+        with tempfile.TemporaryDirectory() as d:
+            args = self._tree(d, "CONFIG_PANIC_ON_OOPS=y\nCONFIG_CRYPTO_VMAC=y\n")
+            with mock.patch("sys.stdout"):
+                rc = check_config.main(
+                    args + ["--base-defconfig",
+                            os.path.join(d, "eve-core_defconfig")])
+        self.assertEqual(rc, 1)
+
+    def test_base_defconfig_declared_symbols_pass(self):
+        with tempfile.TemporaryDirectory() as d:
+            args = self._tree(d, "CONFIG_PANIC_ON_OOPS=y\n")
+            with mock.patch("sys.stdout"):
+                rc = check_config.main(
+                    args + ["--base-defconfig",
+                            os.path.join(d, "eve-core_defconfig")])
+        self.assertEqual(rc, 0)
 
 
 class TestDonorDrift(unittest.TestCase):
