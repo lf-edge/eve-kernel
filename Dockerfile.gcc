@@ -193,6 +193,7 @@ RUN python3 eve/check-config.py \
       --tree-root . \
       --config /kernel-out/.config \
       --flavour "${KERNEL_FLAVOUR}" \
+      --base-defconfig "arch/x86/configs/${BASE_DEFCONFIG}" \
       $(for f in ${KERNEL_FRAGMENTS}; do echo --fragment "$f"; done) \
       --core-defconfig arch/x86/configs/eve-core_defconfig \
       --advisory-parity
