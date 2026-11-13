@@ -124,6 +124,7 @@ help: Makefile
 	@echo "  gen-rt-fragment: regenerate RT fragment from current .config"
 	@echo "  rt-clean: revert RT patch and remove RT stamp file"
 	@echo "  clean: remove generated files"
+	@echo "  prune-builder: trim the BuildKit cache of the linuxkit builder container"
 	@echo
 
 .PHONY: linuxkit
@@ -284,4 +285,24 @@ clean-image-%:
 clean:
 	$(LK) cache clean
 	rm -f $(LK)
-	docker kill $(BUILD_KIT_BUILDER)
+	docker kill $(LINUXKIT_BUILDER_NAME) 2>/dev/null || true
+
+# Trim the BuildKit cache of the linuxkit builder container down to
+# BUILDKIT_KEEP_STORAGE_MB. CI runs this after every build so the cache does
+# not fill the runner's disk.
+# The container is named by LINUXKIT_BUILDER_NAME, not linuxkit's default
+# linuxkit-builder, so it has to be looked up by that name.
+BUILDKIT_KEEP_STORAGE_MB ?= 32000
+
+.PHONY: prune-builder
+prune-builder:
+	@if docker ps -q -f name='^$(LINUXKIT_BUILDER_NAME)$$' | grep -q .; then \
+	  echo "=== BuildKit disk usage before prune ==="; \
+	  docker exec $(LINUXKIT_BUILDER_NAME) buildctl du | tail -n 2; \
+	  echo "=== Reclaiming ==="; \
+	  docker exec $(LINUXKIT_BUILDER_NAME) buildctl prune --keep-storage $(BUILDKIT_KEEP_STORAGE_MB) | tail -n 1; \
+	  echo "=== BuildKit disk usage after prune ==="; \
+	  docker exec $(LINUXKIT_BUILDER_NAME) buildctl du | tail -n 2; \
+	else \
+	  echo "$(LINUXKIT_BUILDER_NAME) container not running; skipping BuildKit cleanup."; \
+	fi

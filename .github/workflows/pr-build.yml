@@ -50,13 +50,4 @@ jobs:
                     KERNEL_CONFIG_FLAVOR=${{ matrix.flavor }} \
                     BRANCH=$SAFE_BRANCH \
                     clean-gcc
-                  if docker ps -q -f name=linuxkit-builder | grep -q .; then
-                      echo "=== BuildKit disk usage before prune ==="
-                      docker exec linuxkit-builder buildctl du | tail -n 2
-                      echo "=== Reclaiming ==="
-                      docker exec linuxkit-builder buildctl prune --keep-storage "${BUILDKIT_KEEP_STORAGE_MB:-32000}" | tail -n 1
-                      echo "=== BuildKit disk usage after prune ==="
-                      docker exec linuxkit-builder buildctl du | tail -n 2
-                  else
-                      echo "linuxkit-builder container not running; skipping BuildKit cleanup."
-                  fi
+                  make -f Makefile.eve prune-builder
