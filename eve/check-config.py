@@ -124,6 +124,32 @@ def check_fragment_disjoint(fragments):
     return problems
 
 
+def check_symbols_declared(sources, symbol_map):
+    """Every symbol the base defconfig or a fragment names must be declared.
+
+    olddefconfig silently drops an assignment to a symbol that no Kconfig in
+    the tree declares, so an entry whose symbol was removed or renamed
+    upstream quietly stops doing anything. check_fragment_values notices a
+    fragment's '=y' or '=m' request for such a symbol only as a value that
+    did not hold; for a fragment's '# CONFIG_X is not set', and for every
+    line of the base defconfig, nothing notices at all. CRYPTO_CRC32_PCLMUL,
+    CRYPTO_VMAC and X86_5LEVEL, recorded in eve/drift/, are entries of the
+    6.12 eve-core_defconfig that 6.18 no longer declares.
+
+    `sources` is an ordered list of (path, {SYMBOL: value}) pairs: the base
+    defconfig, then each fragment in the order the flavour applies them.
+    """
+    problems = []
+    for path, values in sources:
+        for symbol in sorted(values):
+            if symbol not in symbol_map:
+                problems.append(
+                    "CONFIG_%s: %s sets %s, but no Kconfig in this tree declares it"
+                    % (symbol, path, values[symbol])
+                )
+    return problems
+
+
 def check_fragment_values(config, fragments, exceptions):
     """Every symbol's EFFECTIVE request must hold that value after olddefconfig.
 
@@ -295,11 +321,14 @@ DENY_FLAVOURS = ("hwe", "ai")
 
 
 def run_checks(config, symbol_map, fragments, exceptions, boot_symbols,
-               core_config, divergences, deny, advisory_parity):
+               core_config, divergences, deny, advisory_parity,
+               base_defconfig=None):
     """Run every check. Returns (exit_code, report_text).
 
     `fragments` is an ordered list of (path, {SYMBOL: value}) pairs, in the
     order the flavour applies them (as merge_config.sh would apply them).
+    `base_defconfig` is the (path, {SYMBOL: value}) pair of the defconfig
+    the flavour starts from, or None to check the fragments alone.
     """
     lines = []
     fatal = 0
@@ -316,6 +345,9 @@ def run_checks(config, symbol_map, fragments, exceptions, boot_symbols,
         if is_fatal:
             fatal += len(problems)
 
+    sources = ([base_defconfig] if base_defconfig else []) + list(fragments)
+    section("defconfig and fragment symbols declared in this tree",
+            check_symbols_declared(sources, symbol_map), True)
     section("fragment layering (which layer wins an overlap)",
             check_fragment_disjoint(fragments), False)
     section("fragment effective values held after olddefconfig",
@@ -341,6 +373,7 @@ def main(argv=None):
     parser.add_argument("--flavour", required=True,
                         choices=["core", "rt", "hwe", "ai"])
     parser.add_argument("--fragment", action="append", default=[])
+    parser.add_argument("--base-defconfig")
     parser.add_argument("--core-defconfig", required=True)
     parser.add_argument("--advisory-parity", action="store_true")
     args = parser.parse_args(argv)
@@ -351,6 +384,9 @@ def main(argv=None):
     # Ordered list of (path, {SYMBOL: value}) pairs, in the order the
     # flavour applies them - order matters because fragments layer.
     fragments = [(path, parse_fragment(path)) for path in args.fragment]
+    base_defconfig = None
+    if args.base_defconfig:
+        base_defconfig = (args.base_defconfig, parse_config(args.base_defconfig))
     core_config = parse_config(args.core_defconfig)
 
     deny = args.flavour in DENY_FLAVOURS
@@ -373,6 +409,7 @@ def main(argv=None):
             os.path.join(policy_dir, "behavioural-divergence")),
         deny=deny,
         advisory_parity=args.advisory_parity,
+        base_defconfig=base_defconfig,
     )
     print("=== eve config policy: flavour=%s ===" % args.flavour)
     print(report)
